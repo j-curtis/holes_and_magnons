@@ -27,6 +27,11 @@ dataDirectory = "../data/"
 S = 0.5
 epsilon = 0.0001 ### To regularize the behavior when q = (0,0) or (pi,pi)
 
+### Computes J as a function of t and U
+@np.vectorize
+def t2J(t,U):
+	return 4.*t**2/U
+
 ### This method generates a momentum space mesh of N x N points
 def gen_kpts(N):
 	ks = np.linspace(-np.pi,np.pi,N)
@@ -68,7 +73,7 @@ def energy(ks,etas,Jx,Jy):
 
 ### This computes the nematicity form the etas of which there are two -- eta = (etax,etay)
 
-### Classical energy of Neel state 
+### ClassicalIch  energy of Neel state 
 def Neel_energy(Jx,Jy):
 	return -S**2*(Jx + Jy)
 
@@ -91,13 +96,17 @@ def nematicity(ks,etas):
 def main():
 
 	N = 100 ### number of momentum points
-	nJs = 20 ### number of J points scanned 
+	nJs = 10 ### number of J points scanned 
 
+	U = 8.
 
 	### Plot on linear scale vs difference 
-	deltas = np.linspace(-0.1,0.1,nJs)
-	Jxs = np.ones(nJs) + deltas
-	Jys = np.ones(nJs) - deltas
+	delta_ts = np.linspace(-0.1,0.1,nJs)
+	t0 = 1. 
+	J0 = t2J(t0,U)
+
+	Jxs = t2J(t0 + delta_ts,U)
+	Jys = t2J(t0 - delta_ts,U)
 	
 	energies = np.zeros_like(Jxs)
 	nematicities = np.zeros_like(Jxs)
@@ -109,21 +118,21 @@ def main():
 		energies[i] = energy(ks,etas,Jxs[i],Jys[i]) +Neel_energy(Jxs[i],Jys[i])
 		nematicities[i] = nematicity(ks,etas)
 		
-	np.save(dataDirectory+"Jxs.npy",Jxs)
-	np.save(dataDirectory+"Jys.npy",Jys)
-	np.save(dataDirectory+"energies.npy",energies)
-	np.save(dataDirectory+"nematicities.npy",nematicities)
+	#np.save(dataDirectory+"Jxs.npy",Jxs)
+	#np.save(dataDirectory+"Jys.npy",Jys)
+	#np.save(dataDirectory+"energies.npy",energies)
+	#np.save(dataDirectory+"nematicities.npy",nematicities)
 
-	plt.plot((Jxs - Jys),energies,color='black',marker='o')
+	plt.plot((Jxs - Jys)/J0,energies/J0,color='black',marker='o')
 	plt.xlabel(r'$(J_x - J_y)/\frac12(J_x + J_y)$')
 	plt.ylabel(r'$\epsilon_{\rm tot}/\frac12(J_x + J_y)$')
-	plt.savefig(figDirectory+"energy_total_vs_anisotropy.pdf",bbox_inches='tight')
+	#plt.savefig(figDirectory+"energy_total_vs_anisotropy.pdf",bbox_inches='tight')
 	plt.show()
 
-	plt.plot((Jxs - Jys),nematicities,color='blue',marker='o')
+	plt.plot((Jxs - Jys)/J0,nematicities,color='blue',marker='o')
 	plt.xlabel(r'$(J_x - J_y)/\frac12(J_x + J_y)$')
 	plt.ylabel(r'$C_{x} - C_{y}$')
-	plt.savefig(figDirectory+"nematicity_vs_anisotropy.pdf",bbox_inches='tight')
+	#plt.savefig(figDirectory+"nematicity_vs_anisotropy.pdf",bbox_inches='tight')
 	plt.show()
 
 
