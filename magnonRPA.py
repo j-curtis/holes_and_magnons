@@ -122,7 +122,7 @@ def gen_kpts_B2g(ps):
 
 ### This function evalutes the imaginary part of the RPA response function for a given magnon frequency and momentum  
 ### These are passed as q = [w,qx,qy]
-def ImPi(q,ps):
+def ImPi_MC(q,ps):
 
 	### We need to evaluate the integrals 
 	### integral_{E,p} iA(E,p) A(E+w,p+q) gamma_{p} [ gamma_{p}, gamma_{p+q} ] ( f(E)-f(E') )/(E - E'+w)
@@ -138,9 +138,25 @@ def ImPi(q,ps):
 
 	integrands= np.zeros(N) 
 	for i in range(N):
-		integrands[i] = hole_spectrum(k2s[:,i],ps)*( 0.5*np.tanh(0.5*k1s[0,i]/ps.T) - 0.5*np.tanh(0.5*k2s[0,i]/ps.T) )
+		integrands[i] = 2.*np.pi*S*ps.t**2*hole_spectrum(k2s[:,i],ps)*( 0.5*np.tanh(0.5*k1s[0,i]/ps.T) - 0.5*np.tanh(0.5*k2s[0,i]/ps.T) )
 
-	return 2.*np.pi*S*ps.t**2*np.array([ np.mean(integrands*(Ag(k1s[1:,:]))**2 ), np.mean(integrands*Ag(k1s[1:,:])*Ag(k2s[1:,:]) )  ]) 
+	means = np.array([ np.mean(integrands*(Ag(k1s[1:,:]))**2 ), np.mean(integrands*Ag(k1s[1:,:])*Ag(k2s[1:,:]) )  ])
+	errs =  np.array([ np.std(integrands*(Ag(k1s[1:,:]))**2 ), np.std(integrands*Ag(k1s[1:,:])*Ag(k2s[1:,:]) )  ])
+
+	return means, errs
+
+### This function evalutes the imaginary part of the RPA response function for a given magnon frequency and momentum  
+### These are passed as q = [w,qx,qy]
+def ImPi_quad(q,ps):
+
+	### We need to evaluate the integrals 
+	### integral_{E,p} iA(E,p) A(E+w,p+q) gamma_{p} [ gamma_{p}, gamma_{p+q} ] ( f(E)-f(E') )/(E - E'+w)
+
+	integrand_1 = lambda w,kx,ky: 2.*np.pi*S*ps.t**2*Ag(np.array([kx,ky]))**2*hole_spectrum(np.array([w,kx,ky]),ps)*hole_spectrum(np.array([w,kx,ky])+q,ps)*( 0.5*np.tanh(0.5*w/ps.T) - 0.5*np.tanh(0.5*(w+q[0])/ps.T) )
+	integrand_2 = lambda w,kx,ky: 2.*np.pi*S*ps.t**2*Ag(np.array([kx,ky]))*Ag(np.array([kx,ky]) + q[1:])*hole_spectrum(np.array([w,kx,ky]),ps)*hole_spectrum(np.array([w,kx,ky])+q,ps)*( 0.5*np.tanh(0.5*w/ps.T) - 0.5*np.tanh(0.5*(w+q[0])/ps.T) )
+
+	return np.array([ intg.tplquad(integrand_1,-np.pi,np.pi,-np.pi,np.pi,-ps.Emax,ps.Emax)[0]/(4.*np.pi**2) , intg.tplquad(integrand_2,-np.pi,np.pi,-np.pi,np.pi,-ps.Emax,ps.Emax)[0]/(4.*np.pi**2) ])
+
 
 
 def main():
@@ -151,7 +167,7 @@ def main():
 	T = 0.11*t
 	U = 7.5*t
 	J = 4.*t**2/U
-	NMC = 1e4
+	NMC = 1e5
 	Emax = 10.*t
 
 	p = params(t,mu,T,NMC,Emax)
@@ -159,19 +175,19 @@ def main():
 	delta = calc_density(p)
 	print(delta)
 
-	numws = 30
-	ws = np.linspace(-4.*J,4.*J,numws)
+	numws = 20
+	ws = np.linspace(0.,8.*t,numws)
 	ImPis = np.zeros((2,numws))
+	errs = np.zeros((2,numws))
 	
 	for i in range(numws):
-		q = np.array([ws[i],np.pi,0.])
-		ImPis[:,i] = ImPi(q,p)
+		q = np.array([ws[i],np.pi/3.,0.])
+		ImPis[:,i],errs[:,i] = ImPi_quad(q,p)
 
 
 	
-	plt.plot(ws/J,ImPis[0,:],label=r'Im$\Pi_0$')
-	plt.plot(ws/J,ImPis[1,:],label=r'Im$\Pi_1$')
-	#plt.yscale('log')
+	plt.plot(ws/J,ImPis[0,:]/J,label=r'Im$\Pi_0$',marker='.',color='black')
+	plt.plot(ws/J,ImPis[1,:]/J,label=r'Im$\Pi_1$',marker='.',color='blue')
 	plt.xlabel(r'$\omega/J$')
 	plt.legend()
 	plt.show()
