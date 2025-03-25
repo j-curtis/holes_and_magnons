@@ -3,7 +3,9 @@
 ### 03/22/25
 
 import numpy as np
+import pickle as pkl
 from scipy import integrate as intg
+from scipy import signal 
 import time
 from matplotlib import pyplot as plt
 from matplotlib import cm
@@ -24,17 +26,149 @@ plt.rc('ytick', labelsize=14)
 plt.rc('axes', labelsize=18)
 plt.rc('lines', linewidth=2.5)
 
-figDirectory = "../figures/"
-dataDirectory = "../data/"
 
 S = 0.5
 zero = 1.e-8
+t = 1. ### We will use units throughout with t = 1 for the time being 
 
 rng = np.random.default_rng()
 
+#######################
+### Basic math defs ###
+#######################
+### Ag form factor (alias for non vector input )
+def A1g(kx,ky):
+	return 0.5*np.cos(kx) + 0.5*np.cos(ky)
+
+### B2g form factor 
+def B2g(kx,ky):
+	return 0.5*np.cos(kx) - 0.5*np.cos(ky)
+
+### B1g form factor 
+def B1g(kx,ky):
+	return np.sin(kx)*np.sin(ky)
+
+### Fermi Dirac function using tanh form 
+def fd(w,T):
+	return 0.5*np.tanh(0.5*w/T)
+
+### Computes spectral function from retarded GF 
+def G2A(G):
+	return -1./np.pi * np.imag(G)
+
+######################
+### Data importing ###
+######################
+
+### Loads the numpy pickle files for the hole spectra from Ivan at the specified path location 
+### Returns the spectral function arrays kx, ky, w, G as arrays
+### The signature of the returned array is rank 3 tensor with indices [kx,ky,w]
+def load_hole_spectrum(fpath):
+	with open(fpath,'rb') as f:
+		kxs,kys,ws,G = pkl.load(f)
+
+	return kxs,kys,np.real(ws),G2A(G)
+
+######################
+### Calculating Pi ###
+######################
+### This method returns a tensor of values of gamma_p[i,j]
+def gen_A1g_tensor(kxs,kys,ws):
+	kxv,kyv,wv = np.meshgrid(kxs,kys,ws)
+	return A1g(kxv,kyv)
+
+### This method returns a tensor of the FD function at the corresponding energies 
+def gen_fd_tensor(kxs,kys,ws,T):
+	kxv,kyv,wv = np.meshgrid(kxs,kys,ws)
+
+	return fd(wv,T)
+
+
+### Pi is computed as a convolution of the two spectral functions.
+### We have imaginary part given by 
+### Im Pi0[l,m,n] = 2piSt^2 int_{ijk} A[i,j,k] gamma[i,j]**2 A[i-l,j-m,k-n](f[k-n] - f[k])
+### Im Pi1[l,m,n] = 2piSt^2 int_{ijk} A[i,j,k] gamma[i,j]*gamma[i-l,j-m,k-n]* A[i-l,j-m,k-n](f[k-n] - f[k])
+
+### QUESTION: Is it ok to use mode='same' for the convolutions? 
+### This has the effect of chopping the final convolution down to the size of the input arrays but it is unclear if this is the correct boundary condition for the momentum which should be periodic to capture Umklapp process
+### It might be correct for frequency which should then be suffciently padded outside of the holes bandwidth
+def calc_ImPi(kxs,kys,ws,A,T):
+
+	Nkx = len(kxs)
+	Nky = len(kys)
+	Nw = len(ws)
+	#ImPi = np.zeros((2,Nkx,Nky,Nw))
+
+	### First we construct the frist vector in the convolution
+	### Form factor tensors  
+	A1g_tensor = gen_A1g_tensor(kxs,kys,ws)
+	fd_tensor = gen_fd_tensor(kxs,kys,ws,T)
+
+	### First we compute the term with f on the first spectral function 
+	vec1 = A1g_tensor*A1g_tensor*A
+	vec2 = fd_tensor*A
+	vec3 = A1g_tensor*A1g_tensor*fd_tensor*A
+	vec4 = A 
+
+	mode_conv = 'same'
+
+	ImPi0 = signal.convolve(vec1,np.flip(vec2),mode=mode_conv) - signal.convolve(vec3,np.flip(vec4),mode=mode_conv)
+	ImPi0[:,:,:] *= 2.*np.pi*S*t**2/float(Nkx*Nky*Nw) ### The integrals are normalized by total number of points 
+
+	### Now we repeat but for Pi1 we have slightly different form factor assignments in the convolution 
+
+	### First we compute the term with f on the first spectral function 
+	vec1 = A1g_tensor*A
+	vec2 = fd_tensor*A1g_tensor*A
+
+	ImPi1 = signal.convolve(vec1,np.flip(vec2),mode=mode_conv) - signal.convolve(vec2,np.flip(vec1),mode=mode_conv)
+	ImPi1[:,:,:] *= 2.*np.pi*S*t**2/float(Nkx*Nky*Nw) ### The integrals are normalized by total number of points 
+
+	return ImPi0,ImPi1
+
+### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
+### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
+### This can make use of np.dot which sums the last axis of the first array with the (in this case first) axis of the second array
+### Assumes frequency is the last argument of the tensor to be transformed
+def Kramers_Kronig(ws,Im_part):
+	### First we form the right Kramers Kronig tensor
+	Nws = len(ws)
+	kk_matrix = 1./(np.pi*float(Nws))*1./(np.tensordot(ws,np.ones_like(ws),axes=-1) - np.tensordot(np.ones_like(ws),ws,axes=-1) - 1.j*zero )
+	return Im_part@kk_matrix
+
+
+
+##########################################
+### DEPRECATED METHODS FOR MONTE CARLO ###
+##########################################
+### This method uniformly samples the momentum points 
+def gen_kpts_uniform(ps):
+	N = int(ps.NMC)
+	kpts = rng.random((2,N))*2.*np.pi-np.pi*np.ones((2,N)) ### Random k points 
+
+	return kpts
+
+### This method samples momentum points according to the B2g form factor 
+def gen_kpts_B2g(ps):
+	N = int(ps.NMC)
+	### 
+	kpts = np.zeros((2,N))
+	num_accept = 0
+
+	while num_accept < N:
+		k = rng.random(2)*2.*np.pi-np.pi ### Random k point to propose
+
+		r = rng.random() ### accept probability
+		#r = 0.
+
+		if r < (B2g(k))**2:
+			kpts[:,num_accept] = k
+			num_accept += 1
+
+	return kpts
+
 ### Hole spectral function for particular energy and momentum 
-### This should be ideally a callable function which is used to sample energy and momenta and is specified by the model
-### Here k = [E,kx,ky]
+### This will be obtained 
 def hole_spectrum(k,ps):
 	E=k[0]
 	t = ps.t
@@ -81,45 +215,6 @@ def hole_sample(ps):
 
 	return samples
 
-### Ag form factor 
-def Ag(k):
-	return 0.5*np.cos(k[0]) + 0.5*np.cos(k[1])
-
-### B2g form factor 
-def B2g(k):
-	return 0.5*np.cos(k[0]) - 0.5*np.cos(k[1])
-
-### B1g form factor 
-def B1g(k):
-	return np.sin(k[0])*np.sin(k[1])
-
-### This method uniformly samples the momentum points 
-def gen_kpts_uniform(ps):
-	N = int(ps.NMC)
-	print(N)
-	kpts = rng.random((2,N))*2.*np.pi-np.pi*np.ones((2,N)) ### Random k points 
-
-	return kpts
-
-### This method samples momentum points according to the B2g form factor 
-def gen_kpts_B2g(ps):
-	N = int(ps.NMC)
-	### 
-	kpts = np.zeros((2,N))
-	num_accept = 0
-
-	while num_accept < N:
-		k = rng.random(2)*2.*np.pi-np.pi ### Random k point to propose
-
-		r = rng.random() ### accept probability
-		#r = 0.
-
-		if r < (B2g(k))**2:
-			kpts[:,num_accept] = k
-			num_accept += 1
-
-	return kpts
-
 ### This function evalutes the imaginary part of the RPA response function for a given magnon frequency and momentum  
 ### These are passed as q = [w,qx,qy]
 def ImPi_MC(q,ps):
@@ -157,40 +252,68 @@ def ImPi_quad(q,ps):
 
 	return np.array([ intg.tplquad(integrand_1,-np.pi,np.pi,-np.pi,np.pi,-ps.Emax,ps.Emax)[0]/(4.*np.pi**2) , intg.tplquad(integrand_2,-np.pi,np.pi,-np.pi,np.pi,-ps.Emax,ps.Emax)[0]/(4.*np.pi**2) ])
 
-
-
 def main():
 
-
-	t = 1.
-	mu = -7.3*t ### Approximately 4% doping
 	T = 0.11*t
 	U = 7.5*t
 	J = 4.*t**2/U
-	NMC = 1e5
-	Emax = 10.*t
 
-	p = params(t,mu,T,NMC,Emax)
+	figDirectory = "../figures/"
+	dataDirectory = "../data/"
 
-	delta = calc_density(p)
-	print(delta)
+	holesDirectory = dataDirectory+"hole_spectra/03252025/"
+	holesFile = "Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
 
-	numws = 20
-	ws = np.linspace(0.,8.*t,numws)
-	ImPis = np.zeros((2,numws))
-	errs = np.zeros((2,numws))
+	kxs,kys,ws,A = load_hole_spectrum(holesDirectory+holesFile)
+
+	ImPi0,ImPi1 = calc_ImPi(kxs,kys,ws,A,T)
+	Pi0 = Kramers_Kronig(ws,ImPi0)
+	Pi1 = Kramers_Kronig(ws,ImPi1)
+
+	indices = [ [0,0],[10,0],[10,10],[-1,10],[-1,-1] ]
+
+	for i in indices:
+		label_string = r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
+		plt.plot(ws/t,np.real(Pi0[i[0],i[1],:])/t,label=label_string)
 	
-	for i in range(numws):
-		q = np.array([ws[i],np.pi/3.,0.])
-		ImPis[:,i],errs[:,i] = ImPi_quad(q,p)
-
-
-	
-	plt.plot(ws/J,ImPis[0,:]/J,label=r'Im$\Pi_0$',marker='.',color='black')
-	plt.plot(ws/J,ImPis[1,:]/J,label=r'Im$\Pi_1$',marker='.',color='blue')
-	plt.xlabel(r'$\omega/J$')
+	plt.xlabel(r'$\omega/t$')
+	plt.ylabel(r'Re$\Pi_0(\omega,\mathbf{q})/t$')
 	plt.legend()
+	plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
 	plt.show()
+
+	for i in indices:
+		label_string = r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
+		plt.plot(ws/t,np.imag(Pi0[i[0],i[1],:])/t,label=label_string)
+	
+	plt.xlabel(r'$\omega/t$')
+	plt.ylabel(r'Im$\Pi_0(\omega,\mathbf{q})/t$')
+	plt.legend()
+	plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
+	plt.show()
+
+	for i in indices:
+		label_string = r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
+		plt.plot(ws/t,np.real(Pi1[i[0],i[1],:])/t,label=label_string)
+	
+	plt.xlabel(r'$\omega/t$')
+	plt.ylabel(r'Re$\Pi_1(\omega,\mathbf{q})/t$')
+	plt.legend()
+	plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
+	plt.show()
+
+	for i in indices:
+		label_string = r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
+		plt.plot(ws/t,np.imag(Pi1[i[0],i[1],:])/t,label=label_string)
+	
+	plt.xlabel(r'$\omega/t$')
+	plt.ylabel(r'Im$\Pi_1(\omega,\mathbf{q})/t$')
+	plt.legend()
+	plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
+	plt.show()
+
+
+
 
 
 
