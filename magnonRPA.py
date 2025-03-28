@@ -192,9 +192,9 @@ def LSW_kernel(kxs,kys,ws,J):
 
 	for i in range(4):
 		if i < 2:
-			kernel[i,i,...] = (wvs+1.j*zero*np.ones_like(wvs))*(-1)**i-4.*S*J*np.ones_like(wvs)
+			kernel[i,i,...] = wvs*(-1)**i-4.*S*J*np.ones_like(wvs)
 		if i >= 2:
-			kernel[i,i] = -(wvs+1.j*zero*np.ones_like(wvs))*(-1)**i-4.*S*J*np.ones_like(wvs)
+			kernel[i,i] = -wvs*(-1)**i-4.*S*J*np.ones_like(wvs)
 
 	a1g = gen_A1g_tensor(kxs,kys,ws)
 	kernel[0,1] = -4.*S*J*a1g
@@ -230,7 +230,6 @@ def RPA_kernel(kxs,kys,ws,Pi0,Pi1,J):
 
 	return kernel
 
-
 def main():
 
 	T = 0.11*t
@@ -258,7 +257,7 @@ def main():
 	for i in range(nmus):
 		deltas[i] = calc_density(kxs,kys,ws,A,mus[i],T)
 	
-	mu = -2.2*t
+	mu = -3*t
 	print(calc_density(kxs,kys,ws,A,mu,T))
 	plt.plot(mus,deltas)
 	plt.axvline(mu,linestyle='dashed',color='gray')
@@ -276,6 +275,7 @@ def main():
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 	plt.ylabel(r'$\omega/t$')
 	plt.colorbar()
+	plt.savefig(figDirectory+"/ImPi0_w_qx.pdf",bbox_inches='tight')
 	plt.show()
 
 	plt.imshow(np.transpose(ImPi1[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
@@ -283,56 +283,55 @@ def main():
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 	plt.ylabel(r'$\omega/t$')
 	plt.colorbar()
+	plt.savefig(figDirectory+"/ImPi1_w_qx.pdf",bbox_inches='tight')
 	plt.show()
 
 
 	indices = [ [0,0],[10,0],[0,10],[10,10]]
-
-	if False:
-		for i in indices:
-			label_string = r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
-			plt.plot(ws/t,np.real(Pi0[i[0],i[1],:])/t,label=label_string)
+	clrs = ['red','green','blue','purple']
+	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
+	if True:
+		for j in range(len(indices)):
+			i = indices[j]
+			plt.plot(ws/t,np.real(Pi0[i[0],i[1],:])/t,label=label_strings[j])
 		
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Re$\Pi_0(\omega,\mathbf{q})/t$')
 		plt.legend()
-		#plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
+		plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
 		plt.show()
 
-	clrs = ['red','green','blue','purple']
 	if True:
 		for j in range(len(indices)):
 			i = indices[j]
-			label_string = r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
-			plt.plot(ws/t,np.imag(Pi0[i[0],i[1],:]),label=label_string,color=clrs[j])
-			plt.plot(ws/t,ImPi0[i[0],i[1],:],label=label_string,linestyle='dotted',color=clrs[j])
+			plt.plot(ws/t,np.imag(Pi0[i[0],i[1],:])/t,label=label_strings[j])
 		
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Im$\Pi_0(\omega,\mathbf{q})/t$')
 		plt.legend()
-		#plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
+		plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
 		plt.show()
 
-	if False:
-		for i in indices:
-			label_string = r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
-			plt.plot(ws/t,np.real(Pi1[i[0],i[1],:])/t,label=label_string)
+	if True:
+		for j in range(len(indices)):
+			i = indices[j]
+			plt.plot(ws/t,np.real(Pi1[i[0],i[1],:])/t,label=label_strings[j])
 		
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Re$\Pi_1(\omega,\mathbf{q})/t$')
 		plt.legend()
-		#plt.savefig(figDirectory+"/RePi1.pdf",bbox_inches='tight')
+		plt.savefig(figDirectory+"/RePi1.pdf",bbox_inches='tight')
 		plt.show()
 
-	if False:
-		for i in indices:
-			label_string = r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$' 
-			plt.plot(ws/t,np.imag(Pi1[i[0],i[1],:])/t,label=label_string)
+	if True:
+		for j in range(len(indices)):
+			i = indices[j]
+			plt.plot(ws/t,np.imag(Pi1[i[0],i[1],:])/t,label=label_strings[j])
 		
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Im$\Pi_1(\omega,\mathbf{q})/t$')
 		plt.legend()
-		#plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
+		plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
 		plt.show()
 
 
