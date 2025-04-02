@@ -30,6 +30,7 @@ plt.rc('lines', linewidth=2.5)
 
 S = 0.5
 t = 1. ### We will use units throughout with t = 1 for the time being 
+zero = 1.e-5*t ### Infinitesimal broadening factor used to regularize singular magnon kernel. Hopefully should be smaller tha contribution due to holes 
 
 rng = np.random.default_rng()
 
@@ -187,6 +188,8 @@ def LSW_kernel(kxs,kys,ws,J):
 	Nw = len(ws)
 
 	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws)
+	
+	wvs = wvs + 1.j*zero*np.ones_like(wvs)
 
 	kernel = np.zeros((4,4,Nkx,Nky,Nw),dtype=complex)
 
@@ -235,7 +238,7 @@ def main():
 	T = 0.11*t
 	U = 7.5*t
 	J = 4.*t**2/U
-	mu = -3*t ### Chemical potential 
+	mu = -2*t ### Chemical potential 
 
 	figDirectory = "../figures/"
 	dataDirectory = "../data/"
@@ -243,16 +246,9 @@ def main():
 	saveFigs = False
 
 	holesDirectory = dataDirectory+"hole_spectra/03252025/"
-	holesFile = "Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
+	holesFile = "Hole_Spectral_functionJz0.0_alfa0.999_Nx20_Ny20"#"Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
 
 	kxs,kys,ws,A = load_hole_spectrum(holesDirectory+holesFile)
-
-	plt.imshow(np.transpose(A[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.3)
-	plt.colorbar()
-	plt.xlabel(r'$k_x$')
-	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
-	plt.ylabel(r'$E/t$')
-	plt.show()
 	
 	print("Hole doping: ",calc_density(kxs,kys,ws,A,mu,T))
 
@@ -261,8 +257,54 @@ def main():
 	Pi0 = Kramers_Kronig(ws,ImPi0)
 	Pi1 = Kramers_Kronig(ws,ImPi1)
 
+	### Magnon propagators 
+	magnon_kernel = RPA_kernel(kxs,kys,ws,Pi0,Pi1,J)
+	magnon_propagator = np.zeros_like(magnon_kernel)
+
+	for i in range(len(kxs)):
+		for j in range(len(kys)):
+			for k in range(len(ws)):
+				magnon_propagator[:,:,i,j,k] = np.linalg.inv(magnon_kernel[:,:,i,j,k])
+
+
 	### Plotting 
 
+
+	### Frequency cuts of magnon propagator spectral function trace 
+	indices = [ [0,0],[3,0],[6,0],[9,0],[12,0],[15,0]]
+	clrs = cm.gist_heat(np.linspace(0.2,0.9,len(indices)))
+	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
+	
+	if True:
+		for j in range(len(indices)):
+			i = indices[j]
+			spec =np.abs( -1./np.pi* np.imag( np.trace( magnon_propagator[:,:,i[0],i[1],:] ) )/ws)
+			plt.plot(ws/t,spec,label=label_strings[j],color=clrs[j])
+			
+		plt.xlabel(r'$\omega/t$')
+		plt.xlim(-3.*J,3.*J)
+		plt.yscale('log')
+		plt.ylabel(r'$-\frac{1}{\pi}$Im tr$D(\omega,\mathbf{q})/t$')
+		plt.legend()
+		#if saveFigs: plt.savefig(figDirectory+"/Magnon_spectrum.pdf",bbox_inches='tight')
+		plt.show()
+
+
+	### Frequency momentum plot of magnon spectral function
+	if True:
+		spec = np.abs(-1./np.pi* np.imag( np.trace( magnon_propagator[:,:,:,0,:] ) )/ws)
+		plt.imshow(np.transpose(spec),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.8,cmap='coolwarm',norm=mclr.LogNorm())
+		plt.ylabel(r'$\omega/t$')
+		plt.ylim(-3.*J,3.*J)
+		plt.xlabel(r'$q_x$')
+		plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
+		plt.colorbar()
+		#if saveFigs: plt.savefig(figDirectory+"/Magnon_spectrum.pdf",bbox_inches='tight')
+		plt.show()
+
+	quit()
+
+	### Frequency dependence of Pi for kx cut 
 	plt.imshow(np.transpose(ImPi0[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
 	plt.xlabel(r'$q_x$')
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
@@ -280,10 +322,13 @@ def main():
 	plt.show()
 
 
+	### Frequency cuts of magnon propagator spectral function trace 
 	indices = [ [0,0],[10,0],[0,10],[10,10]]
 	clrs = ['red','green','blue','purple']
 	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
 	
+
+	### Frequency cuts of polarizations of magnons
 	if True:
 		for j in range(len(indices)):
 			i = indices[j]
@@ -328,23 +373,6 @@ def main():
 		if saveFigs: plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
 		plt.show()
 
-	### Magnon propagators 
-
-	magnon_kernel = LSW_kernel(kxs,kys,ws,J)
-	print(magnon_kernel.shape)
-	magnon_prop = np.zeros_like(magnon_kernel)
-
-	for i in range(len(kxs)):
-		for j in range(len(kys)):
-			for k in range(len(ws)):
-				magnon_prop[:,:,i,j,k] = np.linalg.inv(magnon_kernel[:,:,i,j,k])
-
-	plt.imshow(np.transpose(-1./np.pi*np.imag(np.trace(magnon_prop[:,:,:,0,:]) )),origin='lower', extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=1.,cmap='coolwarm')
-	plt.colorbar()
-	plt.xlabel(r'$q_x$')
-	plt.ylim(-2.*J,2.*J)
-	plt.ylabel(r'$\omega/t$')
-	plt.show()
 
 
 
