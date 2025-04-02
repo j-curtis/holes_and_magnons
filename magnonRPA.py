@@ -235,9 +235,12 @@ def main():
 	T = 0.11*t
 	U = 7.5*t
 	J = 4.*t**2/U
+	mu = -3*t ### Chemical potential 
 
 	figDirectory = "../figures/"
 	dataDirectory = "../data/"
+
+	saveFigs = False
 
 	holesDirectory = dataDirectory+"hole_spectra/03252025/"
 	holesFile = "Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
@@ -250,32 +253,22 @@ def main():
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 	plt.ylabel(r'$E/t$')
 	plt.show()
-
-	nmus = 100
-	mus = np.linspace(-4.*t,4.*t,nmus)
-	deltas = np.zeros_like(mus)
-	for i in range(nmus):
-		deltas[i] = calc_density(kxs,kys,ws,A,mus[i],T)
 	
-	mu = -3*t
-	print(calc_density(kxs,kys,ws,A,mu,T))
-	plt.plot(mus,deltas)
-	plt.axvline(mu,linestyle='dashed',color='gray')
-	plt.xlabel(r'$\mu/t$')
-	plt.ylabel(r'$\delta$')
-	plt.show()
+	print("Hole doping: ",calc_density(kxs,kys,ws,A,mu,T))
 
+	### Calculate RPA spectra from hole spectra 
 	ImPi0,ImPi1 = calc_ImPi(kxs,kys,ws,A,mu,T)
 	Pi0 = Kramers_Kronig(ws,ImPi0)
 	Pi1 = Kramers_Kronig(ws,ImPi1)
 
+	### Plotting 
 
 	plt.imshow(np.transpose(ImPi0[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
 	plt.xlabel(r'$q_x$')
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 	plt.ylabel(r'$\omega/t$')
 	plt.colorbar()
-	plt.savefig(figDirectory+"/ImPi0_w_qx.pdf",bbox_inches='tight')
+	if saveFigs: plt.savefig(figDirectory+"/ImPi0_w_qx.pdf",bbox_inches='tight')
 	plt.show()
 
 	plt.imshow(np.transpose(ImPi1[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
@@ -283,13 +276,14 @@ def main():
 	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 	plt.ylabel(r'$\omega/t$')
 	plt.colorbar()
-	plt.savefig(figDirectory+"/ImPi1_w_qx.pdf",bbox_inches='tight')
+	if saveFigs: plt.savefig(figDirectory+"/ImPi1_w_qx.pdf",bbox_inches='tight')
 	plt.show()
 
 
 	indices = [ [0,0],[10,0],[0,10],[10,10]]
 	clrs = ['red','green','blue','purple']
 	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
+	
 	if True:
 		for j in range(len(indices)):
 			i = indices[j]
@@ -298,7 +292,7 @@ def main():
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Re$\Pi_0(\omega,\mathbf{q})/t$')
 		plt.legend()
-		plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
+		if saveFigs: plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
 		plt.show()
 
 	if True:
@@ -309,7 +303,7 @@ def main():
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Im$\Pi_0(\omega,\mathbf{q})/t$')
 		plt.legend()
-		plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
+		if saveFigs: plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
 		plt.show()
 
 	if True:
@@ -320,7 +314,7 @@ def main():
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Re$\Pi_1(\omega,\mathbf{q})/t$')
 		plt.legend()
-		plt.savefig(figDirectory+"/RePi1.pdf",bbox_inches='tight')
+		if saveFigs: plt.savefig(figDirectory+"/RePi1.pdf",bbox_inches='tight')
 		plt.show()
 
 	if True:
@@ -331,10 +325,10 @@ def main():
 		plt.xlabel(r'$\omega/t$')
 		plt.ylabel(r'Im$\Pi_1(\omega,\mathbf{q})/t$')
 		plt.legend()
-		plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
+		if saveFigs: plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
 		plt.show()
 
-
+	### Magnon propagators 
 
 	magnon_kernel = LSW_kernel(kxs,kys,ws,J)
 	print(magnon_kernel.shape)
