@@ -12,21 +12,6 @@ from matplotlib import pyplot as plt
 from matplotlib import cm
 from matplotlib import colors as mclr
 
-from collections import namedtuple
-
-params = namedtuple('params','t mu T NMC Emax')
-
-### Plotting settings 
-#plt.rc('figure', dpi=100)
-#plt.rc('figure',figsize=(4,1.7))
-plt.rc('font', family = 'Times New Roman')
-plt.rc('font', size = 14)
-plt.rc('text', usetex=True)
-plt.rc('xtick', labelsize=14)
-plt.rc('ytick', labelsize=14)
-plt.rc('axes', labelsize=18)
-plt.rc('lines', linewidth=2.5)
-
 
 S = 0.5
 t = 1. ### We will use units throughout with t = 1 for the time being 
@@ -78,6 +63,18 @@ def load_hole_spectrum(fpath,roll_momenta=False):
 
 
 	return kxs,kys,np.real(ws),np.abs(G2A(G)) ### We need to take abs of spectral function which is directly computed form time-ordered G and needs to be converted to retarded
+
+### This method produces a fictitious hole spectrum which is a box in frequency and flat in momentum, for debugging purposes
+def gen_box_A(kxs,kys,ws,W):
+    Nkx = len(kxs)
+    Nky = len(kys)
+    Nw = len(ws)
+
+    A = np.zeros((Nkx,Nky,Nw))
+    for i in range(Nw):
+        if ws[i] > -(W/2.) and ws[i]<(W/2.):
+            A[:,:,i] = 1./W*np.ones((Nkx,Nky))
+    return A
 
 ###################
 ### Hole Doping ###
@@ -157,6 +154,13 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	return ImPi0,ImPi1
 
+### This method is the analytically expected Pi0 
+def box_Pi0(w,W,mu):
+    prefactor = 2.*np.pi*S*t**2/(4.*W**2)
+    Emin = max([-W/2.,mu-np.abs(w)])
+    Emax = min([W/2-np.abs(w),mu])
+    return -prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
+
 ### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
 ### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
 ### This can make use of np.dot which sums the last axis of the first array with the (in this case first) axis of the second array
@@ -234,11 +238,21 @@ def RPA_kernel(kxs,kys,ws,Pi0,Pi1,J):
 	return kernel
 
 def main():
+	### Plotting settings 
+	#plt.rc('figure', dpi=100)
+	#plt.rc('figure',figsize=(4,1.7))
+	plt.rc('font', family = 'Times New Roman')
+	plt.rc('font', size = 14)
+	plt.rc('text', usetex=True)
+	plt.rc('xtick', labelsize=14)
+	plt.rc('ytick', labelsize=14)
+	plt.rc('axes', labelsize=18)
+	plt.rc('lines', linewidth=2.5)
 
 	T = 0.11*t
 	U = 7.5*t
 	J = 4.*t**2/U
-	mu = -2*t ### Chemical potential 
+	mu = -1*t ### Chemical potential 
 
 	figDirectory = "../figures/"
 	dataDirectory = "../data/"
@@ -246,7 +260,7 @@ def main():
 	saveFigs = False
 
 	holesDirectory = dataDirectory+"hole_spectra/03252025/"
-	holesFile = "Hole_Spectral_functionJz0.0_alfa0.999_Nx20_Ny20"#"Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
+	holesFile = "Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"#"Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
 
 	kxs,kys,ws,A = load_hole_spectrum(holesDirectory+holesFile)
 	
@@ -278,7 +292,7 @@ def main():
 	if True:
 		for j in range(len(indices)):
 			i = indices[j]
-			spec =np.abs( -1./np.pi* np.imag( np.trace( magnon_propagator[:,:,i[0],i[1],:] ) )/ws)
+			spec =np.abs( -1./np.pi* np.imag( np.linalg.det( magnon_propagator[:,:,i[0],i[1],:],axes=[0,1] ) )/ws)
 			plt.plot(ws/t,spec,label=label_strings[j],color=clrs[j])
 			
 		plt.xlabel(r'$\omega/t$')
@@ -301,8 +315,6 @@ def main():
 		plt.colorbar()
 		#if saveFigs: plt.savefig(figDirectory+"/Magnon_spectrum.pdf",bbox_inches='tight')
 		plt.show()
-
-	quit()
 
 	### Frequency dependence of Pi for kx cut 
 	plt.imshow(np.transpose(ImPi0[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
