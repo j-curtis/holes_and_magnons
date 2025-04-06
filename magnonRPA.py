@@ -97,6 +97,32 @@ def calc_density(kxs,kys,ws,A,mu,T):
 ######################
 ### Calculating Pi ###
 ######################
+
+
+### Home built convolution that is fast for 3D arrays and also respects periodic boundary conditions
+### Also it zero pads on last (energy) axis so that artifacts are removed 
+### Arrays may be complex
+def convolve_PBC(x,y,pad=0):
+    if pad >0 :
+        x = np.pad(x,((0,0),(0,0),(pad,pad)))
+        y = np.pad(y,((0,0),(0,0),(pad,pad)))
+    
+    ### First we take an FFT of both arrays 
+    x_fft = np.fft.fftn(x)
+    y_fft = np.fft.fftn(y)
+
+    ### Next we take an element-wise product 
+
+    z_fft = x_fft*y_fft 
+
+    ### Now we transform back
+    z = np.fft.ifftn(z_fft)
+    z = np.fft.ifftshift(z,axes=-1)
+    ### We also have to shift since numpy shifts the fft to nonsymmetric interval
+    last_axis_size=z.shape[-1]
+    z = z[...,pad:(last_axis_size-pad)] ### Chop back down on the last axis 
+    return np.real(z) 
+
 ### This method returns a tensor of values of gamma_p[i,j]
 def gen_A1g_tensor(kxs,kys,ws):
 	kxv,kyv,wv = np.meshgrid(kxs,kys,ws)
@@ -135,12 +161,14 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	vec3 = A1g_tensor*A1g_tensor*fd_tensor*A
 	vec4 = A 
 
-	conv_mode = 'same'
-	
+	#conv_mode = 'same'
+	convolver = convolve_PBC ### This is the convolution function we will call 
+	pad = 1000 ### We pad last axis just to be careful
 	### We want periodic boundary conditions for the convolutions but this will be challenging to implement in d = 3 
 	### The native convolve2d method does not work but FFT convolve should work 
 
-	ImPi0 = signal.fftconvolve(vec1,np.flip(vec2),mode=conv_mode) - signal.fftconvolve(vec3,np.flip(vec4),mode=conv_mode)
+	#ImPi0 = signal.fftconvolve(vec1,np.flip(vec2),mode=conv_mode) - signal.fftconvolve(vec3,np.flip(vec4),mode=conv_mode)
+	ImPi0 = convolver(vec1,np.flip(vec2),pad) - convolver(vec3,np.flip(vec4),pad)
 	ImPi0[:,:,:] *= 2.*np.pi*S*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
 
 	### Now we repeat but for Pi1 we have slightly different form factor assignments in the convolution 
@@ -149,7 +177,8 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	vec1 = A1g_tensor*A
 	vec2 = fd_tensor*A1g_tensor*A
 
-	ImPi1 = signal.fftconvolve(vec1,np.flip(vec2),mode=conv_mode) - signal.fftconvolve(vec2,np.flip(vec1),mode=conv_mode)
+	#ImPi1 = signal.fftconvolve(vec1,np.flip(vec2),mode=conv_mode) - signal.fftconvolve(vec2,np.flip(vec1),mode=conv_mode)
+	ImPi1 = convolver(vec1,np.flip(vec2),pad) - convolver(vec2,np.flip(vec1),pad)
 	ImPi1[:,:,:] *= 2.*np.pi*S*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
 
 	return ImPi0,ImPi1
