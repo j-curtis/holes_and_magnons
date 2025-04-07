@@ -163,7 +163,7 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	#conv_mode = 'same'
 	convolver = convolve_PBC ### This is the convolution function we will call 
-	pad = 1000 ### We pad last axis just to be careful
+	pad = 200 ### We pad last axis just to be careful
 	### We want periodic boundary conditions for the convolutions but this will be challenging to implement in d = 3 
 	### The native convolve2d method does not work but FFT convolve should work 
 
@@ -184,11 +184,11 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	return ImPi0,ImPi1
 
 ### This method is the analytically expected Pi0 
-def box_Pi0(w,W,mu):
-    prefactor = 2.*np.pi*S*t**2/(4.*W**2)
-    Emin = max([-W/2.,mu-np.abs(w)])
-    Emax = min([W/2-np.abs(w),mu])
-    return -prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
+def box_Pi(kx,ky,w,W,mu):
+    prefactor = -2.*np.pi*S*t**2/(4.*W**2)
+    Emax = min([W/2.-np.abs(w),mu])
+    Emin = max([mu-np.abs(w),-W/2.])
+    return prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w), prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)*A1g(kx,ky)
 
 ### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
 ### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
