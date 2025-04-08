@@ -125,12 +125,12 @@ def convolve_PBC(x,y,pad=0):
 
 ### This method returns a tensor of values of gamma_p[i,j]
 def gen_A1g_tensor(kxs,kys,ws):
-	kxv,kyv,wv = np.meshgrid(kxs,kys,ws)
+	kxv,kyv,wv = np.meshgrid(kxs,kys,ws,indexing='ij')
 	return A1g(kxv,kyv)
 
 ### This method returns a tensor of the FD function at the corresponding energies 
 def gen_fd_tensor(kxs,kys,ws,mu,T):
-	kxv,kyv,wv = np.meshgrid(kxs,kys,ws)
+	kxv,kyv,wv = np.meshgrid(kxs,kys,ws,indexing='ij')
 
 	return fd(wv,mu,T)
 
@@ -220,7 +220,7 @@ def LSW_kernel(kxs,kys,ws,J):
 	Nky = len(kys)
 	Nw = len(ws)
 
-	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws)
+	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
 	
 	wvs = wvs + 1.j*zero*np.ones_like(wvs)
 
