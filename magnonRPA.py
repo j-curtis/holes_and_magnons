@@ -278,6 +278,58 @@ def RPA_kernel(kxs,kys,ws,Pi0,Pi1,J):
 
 	return kernel
 
+### This returns the RPA propagator
+def RPA_propagator(kxs,kys,ws,Pi0,Pi1,J):
+	kernel = RPA_kernel(kxs,kys,ws,Pi0,Pi1,J)
+	propagtor = np.zeros_like(kernel)
+
+	for i in range(len(kxs)):
+		for j in range(len(kys)):
+			for k in range(len(ws)):
+				propagtor[:,:,i,j,k] = np.linalg.inv(kernel[:,:,i,j,k])
+
+	return propagtor
+
+
+######################################
+### For demler_tools compatibility ###
+######################################
+
+### This method is designed to be implemented using the demler_tools library from Radu
+### It will take as input:
+### 	location of the pickled files for the hole spectral functions
+###		Temperature T
+### 	Chemical potential mu
+### 	Magnon superexchange J 
+### It will then save as a pickled file the magnon RPA Greens function as well as the Pi bubbles in the designated location along with arrays of omega and k points used 
+### The pickled output will be [kxs,kys,ws,propagator,Pi0,Pi1]
+def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
+	### First we load in the hole spectral functions 
+	kxs,kys,ws,A = load_hole_spectrum(hole_filename)
+
+	### Next we compute the doping 
+	delta = calc_density(kxs,kys,ws,A,mu,T)
+
+	### Compute the imaginary parts of RPA Pi functions 
+	ImPi0,ImPi1 = calc_ImPi(kxs,kys,ws,A,mu,T)
+
+	### Kramers Kronig
+	Pi0 = Kramers_Kronig(ws,ImPi0)
+	Pi1 = Kramers_Kronig(ws,ImPi1)
+
+	### Now construct the propagator 
+	magnon_propagator = RPA_propagator(kxs,kys,ws,Pi0,Pi1,J)
+
+	### Now we save the files 
+	with open(save_filename,'wb') as savefile:
+		pickle.dump((kxs,kys,ws,magnon_propagator,Pi0,Pi1),savefile)
+
+	return None
+
+
+
+
+
 def main():
 	### Plotting settings 
 	#plt.rc('figure', dpi=100)
@@ -322,7 +374,7 @@ def main():
 				magnon_propagator[:,:,i,j,k] = np.linalg.inv(magnon_kernel[:,:,i,j,k])
 
 
-	### Plotting 
+	### Plotting
 
 
 	### Frequency cuts of magnon propagator spectral function trace 
