@@ -19,6 +19,19 @@ zero = 1.e-5*t ### Infinitesimal broadening factor used to regularize singular m
 
 rng = np.random.default_rng()
 
+### some matrices useful for construction Nambu Bogoliubov matrices 
+### we use matrices [0,1,2,3] to correspond to [identity, paul_x,pauli_y,pauli_z]
+pauli = [ np.array([[1.,0.],[0.,1.]],dtype=complex), np.array([[0.,1.],[1.,0.]],dtype=complex),np.array([[0.,-1.j],[1.j,0.]],dtype=complex),np.array([[1.,0.],[0.,-1.]],dtype=complex) ]
+
+### Now we tensor these together 
+### We use tau for the sublattice and zeta for the Nambu doubled matrices
+### These are organized as zeta X tau  
+zeta = [ np.kron( pauli[i], pauli[0] )  for i in range(4) ]
+tau = [ np.kron( pauli[0], pauli[i]) for i in range(4)]
+
+### These matrices are ones which project out the duplicated negative frequency sector 
+tau_projected = [ tau[i]@(zeta[0]+zeta[3])/2. for i in range(4)]
+
 #######################
 ### Basic math defs ###
 #######################
@@ -206,7 +219,6 @@ def Kramers_Kronig(ws,Im_part):
 			if i != j:
 				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	return Im_part@kk_matrix_real + 1.j*Im_part
-
 
 ########################################
 ### Computing Magnon Greens Funciton ###
