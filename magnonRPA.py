@@ -168,7 +168,7 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	tensor_01 = fd_tensor*A 
 	tensor_10 = A1g_tensor*A
 	tensor_11 = A1g_tensor*fd_tensor*A 
-	tensor_20 = A1g_tensor*A1g_tensor*A1g
+	tensor_20 = A1g_tensor*A1g_tensor*A
 	tensor_21 = A1g_tensor*A1g_tensor*fd_tensor*A 
 
 
@@ -231,7 +231,7 @@ def LSW_kernel(kxs,kys,ws,J):
 	
 	for i in range(2):
 		for j in range(2):
-			kernel[i,j,...] = pauli[3][i,j]*wvs - coord_z*J*S*paul[0][i,j]*np.ones_like(wvs) - coord_z*J*S*paul[1][i,j]*a1g
+			kernel[i,j,...] = pauli[3][i,j]*wvs - coord_z*J*S*pauli[0][i,j]*np.ones_like(wvs) - coord_z*J*S*pauli[1][i,j]*a1g
 
 	return kernel 
 
