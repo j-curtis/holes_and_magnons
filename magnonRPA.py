@@ -185,13 +185,13 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	return ImPi
 
-### This method is the analytically expected Pi0 
+### This method is the analytically expected Pi
 def box_Pi(kx,ky,w,W,mu):
     prefactor = -2.*np.pi*S*t**2/(4.*W**2)
     Emax = min([W/2.-np.abs(w),mu])
     Emin = max([mu-np.abs(w),-W/2.])
-    return prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w), prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)*A1g(kx,ky)
-
+    return prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
+    
 ### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
 ### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
 ### This can make use of np.dot which sums the last axis of the first array with the (in this case first) axis of the second array
