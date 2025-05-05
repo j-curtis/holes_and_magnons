@@ -191,7 +191,7 @@ def box_Pi(kx,ky,w,W,mu):
     Emax = min([W/2.-np.abs(w),mu])
     Emin = max([mu-np.abs(w),-W/2.])
     return prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
-    
+
 ### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
 ### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
 ### This can make use of np.dot which sums the last axis of the first array with the (in this case first) axis of the second array
@@ -243,10 +243,12 @@ def RPA_kernel(kxs,kys,ws,Pi,J):
 	kernel = LSW_kernel(kxs,kys,ws,J)
 
 	### Now we place the Pi components
-	kernel[0,0,...] += - Pi
-	kernel[1,1,...] += - np.flip(Pi) ### q -> -q for this component
-	kernel[0,1,...] += -Pi 
-	kernel[1,0,...] += -np.conj(Pi)
+	#kernel[0,0,...] += - Pi
+	#kernel[1,1,...] += - np.flip(Pi) ### q -> -q for this component
+	#kernel[0,1,...] += -Pi 
+	#kernel[1,0,...] += -np.conj(Pi)
+
+	kernel += -np.tensordot( pauli[0] + pauli[1], Pi,axes=0)
 
 	return kernel
 
@@ -296,9 +298,6 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 		pickle.dump((kxs,kys,ws,magnon_propagator,Pi),savefile)
 
 	return None
-
-
-
 
 
 def main():
