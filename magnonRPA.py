@@ -264,6 +264,12 @@ def RPA_propagator(kxs,kys,ws,Pi,J):
 
 	return propagtor
 
+### This takes the propagator and extracts the spectral function 
+def RPA_spectrum(kxs,kys,ws,DRPA):
+	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
+	### determinant wants last two axes the matrix axes
+	mat = np.moveaxis(DRPA,[0,1],[-2,-1])
+	return 1./np.pi*np.imag( np.linalg.det(mat) )*wvs
 
 ######################################
 ### For demler_tools compatibility ###
