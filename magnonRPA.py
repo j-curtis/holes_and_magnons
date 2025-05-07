@@ -16,7 +16,7 @@ from matplotlib import colors as mclr
 S = 0.5 ### Spin 1/2 
 coord_z = 4. ### Coordination number for square lattice
 t = 1. ### We will use units throughout with t = 1 for the time being 
-zero = 1.e-5*t ### Infinitesimal broadening factor used to regularize singular magnon kernel. Hopefully should be smaller tha contribution due to holes 
+#zero = 1.e-2*t ### Default infinitesimal broadening factor used to regularize singular magnon kernel. Should be taken commensurate to dw spacing for best results
 
 rng = np.random.default_rng()
 
@@ -104,30 +104,69 @@ def calc_density(kxs,kys,ws,A,mu,T):
 ### Calculating Pi ###
 ######################
 
+### Home built autocorrelation method that is fast for 3D arrays and also respects periodic boundary conditions
+### This is meant to numerically compute the integral h(q) = int_p f(p) g(p+q)  (does not normalize but computes the sum otherwise)
+### Also automatically pads last (energy) axis so that spectrum does not overlap 
+### It also shifts the last axis to center the spectrum at the end as it should be for a physical energy variable
+def correlator_PBC(f,g):
+    """Accepts arrays f,g [Nx,Nky,Nw] and returns the circular autocorrelation with automatically zero-padded last axis.
+    Precisely this retuns z[i,j,k] = sum_{l,m,n} x[l,m,n] * y[i+l,j+m,k+n] padded appropriately on last axis.
+    Finally, this shifts the frequencies to the center again at the end. 
+    """
+    pad_size = f.shape[-1]
+    
+    f_padded = np.pad(f,( (0,0),(0,0),(pad_size,pad_size) ) ) 
+    g_padded = np.pad(g,( (0,0),(0,0),(pad_size,pad_size) ) )  
 
+    ### Now we take the FFT of both arrays 
+    f_fft = np.fft.fftn(f_padded)
+    g_fft = np.fft.fftn(g_padded)
+    
+    ### Next we take an element-wise product 
+    ### conjugate to compute correlation instead of convolution
+    h_fft = f_fft*np.conjugate(g_fft) 
+
+    ### Now we transform back
+    h_padded = np.fft.ifftn(h_fft)
+
+    ### Roll back and chop
+    h = np.roll(h_padded,[0,0,pad_size//2],[0,1,2])[:,:,:pad_size]
+
+
+    
+    return np.real(h)
+
+
+#### DEFECTIVE #### 
 ### Home built convolution that is fast for 3D arrays and also respects periodic boundary conditions
 ### Also it zero pads on last (energy) axis so that artifacts are removed 
-### Arrays may be complex
-def convolve_PBC(x,y,pad=0):
-    if pad >0 :
-        x = np.pad(x,((0,0),(0,0),(pad,pad)))
-        y = np.pad(y,((0,0),(0,0),(pad,pad)))
-    
-    ### First we take an FFT of both arrays 
-    x_fft = np.fft.fftn(x)
-    y_fft = np.fft.fftn(y)
+### It also shifts the last axis to center the spectrum at the end 
+def convolve_PBC(x,y):
+    """Accepts arrays x,y [Nkx,Nky,Nw] and returns the circular convolution with automatically zero-padded last axis.
+    Precisely this retuns z[i,j,k] = sum_{l,m,n} x[l,m,n] * y[i-l,j-m,k-n] padded appropriately on last axis.
+    Finally, this shifts the frequencies to the center again at the end. 
+    """
+    Nw = x.shape[-1]
+    pad_size = Nw ### We automatically pad symmetrically the last axis 
+    x_padded = np.pad(x,((0,0),(0,0),(pad_size,pad_size) )) 
+    y_padded = np.pad(y,((0,0),(0,0),(pad_size,pad_size) ))  
+
+    ### Now we take the FFT of both arrays 
+    x_fft = np.fft.fftn(x_padded)
+    y_fft = np.fft.fftn(y_padded)
 
     ### Next we take an element-wise product 
-
     z_fft = x_fft*y_fft 
 
     ### Now we transform back
-    z = np.fft.ifftn(z_fft)
-    z = np.fft.ifftshift(z,axes=-1)
-    ### We also have to shift since numpy shifts the fft to nonsymmetric interval
-    last_axis_size=z.shape[-1]
-    z = z[...,pad:(last_axis_size-pad)] ### Chop back down on the last axis 
-    return np.real(z) 
+    z_padded = np.fft.ifftn(z_fft)
+
+    ### We now have to chop off the padded zeros
+    z = np.fft.ifftshift(z_padded,axes=-1) ### Shift to middle of spectrum
+    z = z[...,pad_size:2*pad_size] ### Chop out the padded parts
+    #z = np.fft.fftshift(z,axes=-1) ### Shift back to 
+    
+    return np.real(z)
 
 ### This method returns a tensor of values of gamma_p[i,j]
 def gen_A1g_tensor(kxs,kys,ws):
@@ -141,8 +180,9 @@ def gen_fd_tensor(kxs,kys,ws,mu,T):
 	return fd(wv,mu,T)
 
 ### Pi is computed as a convolution of the two spectral functions.
-### We have imaginary part given by 
-### Im Pi[l,m,n] = -1/2 pi S z^2 t^2 int_{ijk} ( gamma[i,j] + gamma[i+l,j+m] )^2 A[i,j,k] A[i+l,j+m,k+n](f[k+n] - f[k])
+### There are two functions: Pi0 and Pi1. These have imaginary parts 
+### ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px+qx,py+qy]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### ImPi[1,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py] gamma[px+qx,py+qy]  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
 
 def calc_ImPi(kxs,kys,ws,A,mu,T):
 
@@ -150,20 +190,13 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	Nky = len(kys)
 	Nw = len(ws)
 	dw = ws[1] - ws[0]
-	#ImPi = np.zeros((2,Nkx,Nky,Nw))
+	ImPi = np.zeros((2,Nkx,Nky,Nw))
 
 	### First we construct the frist vector in the convolution
 	### Form factor tensors  
 	A1g_tensor = gen_A1g_tensor(kxs,kys,ws)
 	fd_tensor = gen_fd_tensor(kxs,kys,ws,mu,T)
-
-	### First we compute the term with f on the first spectral function
-	### This will be a sum of three convolutions which come from expanding out the square of the form factor 
 	
-	### (A1g * A1g *A ) . (A * FD) + 2. * ( A1g *A ) . (A1g *A * FD) + A. (A1g*A1g*FD*A)
-	### Then subtracted from this is the same with FD on the other side 
-	### The relevant tensors are A, FD *A, A1g*A, A1g*A*FD, A1g*A1g*A,A1g*A1g*A*FD
-
 	tensor_00 = A
 	tensor_01 = fd_tensor*A 
 	tensor_10 = A1g_tensor*A
@@ -174,23 +207,42 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	### Use convolution method of choice 
 	### Here we will use the home built method
-	convolver = convolve_PBC ### This is the convolution function we will call 
-	pad = 400 ### We pad last axis just to be careful
+	convolver = correlator_PBC ### This is the convolution function we will call
 
-	ImPi = convolver(tensor_20,np.flip(tensor_01),pad) + 2.*convolver(tensor_10,np.flip(tensor_11),pad) + convolver(tensor_00,np.flip(tensor_21),pad) 
-	ImPi -= convolver(tensor_21,np.flip(tensor_00),pad) + 2.*convolver(tensor_11,np.flip(tensor_10),pad) + convolver(tensor_01,np.flip(tensor_20),pad)
+	### This convolver does not normalize the sum (so we must multiple by appropriate normalizations) and does not center the spectrum 
+ 
+	ImPi[0,...] = convolver(tensor_00, tensor_21) - convolver(tensor_01, tensor_20) 
+	ImPi[1,...] = convolver(tensor_10, tensor_11) - convolver(tensor_11, tensor_10)
 
-	#ImPi = convolver(vec1,np.flip(vec2),pad) - convolver(vec3,np.flip(vec4),pad)
-	ImPi[:,:,:] *= 0.5*np.pi*S*coord_z**2*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
+	#ImPi[0,...] = np.flip( convolver(np.flip(tensor_00),tensor_21) - convolver(np.flip(tensor_01), tensor_20) )
+	#ImPi[1,...] = np.flip( convolver(np.flip(tensor_10),tensor_11) - convolver(np.flip(tensor_11),tensor_10) )
+
+
+	ImPi *= 2.*np.pi*S*coord_z**2*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
 
 	return ImPi
 
-### This method is the analytically expected Pi
-def box_Pi(kx,ky,w,W,mu):
-    prefactor = -2.*np.pi*S*t**2/(4.*W**2)
-    Emax = min([W/2.-np.abs(w),mu])
-    Emin = max([mu-np.abs(w),-W/2.])
-    return prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
+### This method is the analytically expected ImPi0 and ImPi1 for box DOS model
+def box_ImPi(kxs,kys,ws,W,mu):
+
+	Nkx = len(kxs)
+	Nky = len(kys)
+	Nw = len(ws)
+	dw = ws[1] - ws[0]
+	ImPi = np.zeros((2,Nkx,Nky,Nw))
+	a1g = gen_A1g_tensor(kxs,kys,ws)
+
+	for i in range(Nw):
+		w = ws[i]
+		prefactor = -2.*np.pi*S*coord_z**2*t**2/(4.*W**2)
+		Emax = min([W/2.-np.abs(w),mu])
+		Emin = max([mu-np.abs(w),-W/2.])
+
+		ImPi[0,...,i] = prefactor*(Emax-Emin)*float(Emax > Emin)*np.sign(w)
+
+	ImPi[1,...] = ImPi[0,...]*a1g
+
+	return ImPi
 
 ### This method will apply Kramers kronig relations to a function's imaginary part to obtain the retarded function 
 ### PiR[i,j,k] = 1./ (pi N) sum_l Im_part[i,j,l] 1./(ws[l] - ws[k] - i0^+) 
@@ -204,7 +256,6 @@ def Kramers_Kronig(ws,Im_part):
 	kk_matrix_real = np.zeros((Nws,Nws),dtype=complex)
 	for i in range(Nws):
 		for j in range(Nws):
-			#kk_matrix[i,j] = dw*((ws[j] - ws[i]) +1.j*zero)/(np.pi)*1./( (ws[j] - ws[i])**2 + zero**2) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 			if i != j:
 				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	return Im_part@kk_matrix_real + 1.j*Im_part
@@ -223,15 +274,16 @@ def LSW_kernel(kxs,kys,ws,J):
 
 	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
 	
-	wvs = wvs + 1.j*zero*np.ones_like(wvs)
+	dw = ws[1] - ws[0]
+	### We adaptively choose broadening 
 
-	kernel = np.zeros((2,2,Nkx,Nky,Nw),dtype=complex)
+	#wvs = wvs + 1.j*zero*np.ones_like(wvs) 
+	zero = 1.2*dw 
+	wvs = wvs + 1.j*zero*np.ones_like(wvs) 
 
 	a1g = gen_A1g_tensor(kxs,kys,ws)
 	
-	for i in range(2):
-		for j in range(2):
-			kernel[i,j,...] = pauli[3][i,j]*wvs - coord_z*J*S*pauli[0][i,j]*np.ones_like(wvs) - coord_z*J*S*pauli[1][i,j]*a1g
+	kernel = np.tensordot(pauli[3],wvs,axes=0) - coord_z*J*S*( np.tensordot(pauli[0],np.ones_like(wvs),axes=0)  + np.tensordot(pauli[1],a1g,axes=0) )
 
 	return kernel 
 
@@ -240,15 +292,11 @@ def LSW_kernel(kxs,kys,ws,J):
 ### Pis are passed individually 
 ### We must be careful as they may not be symmetric in frequency or momentum 
 def RPA_kernel(kxs,kys,ws,Pi,J):
-	kernel = LSW_kernel(kxs,kys,ws,J)
-
-	### Now we place the Pi components
-	#kernel[0,0,...] += - Pi
-	#kernel[1,1,...] += - np.flip(Pi) ### q -> -q for this component
-	#kernel[0,1,...] += -Pi 
-	#kernel[1,0,...] += -np.conj(Pi)
-
-	kernel += -np.tensordot( pauli[0] + pauli[1], Pi,axes=0)
+	kernel = LSW_kernel(kxs,kys,ws,J) 
+	kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
+	kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
+	kernel[1,0,...] += - Pi[1,...]#np.conjugate(np.flip(Pi[1,...])) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
+	kernel[1,1,...] += - np.conjugate(np.flip(Pi[0,...])) ### This should be Pi0^A(-q) 
 
 	return kernel
 
@@ -265,11 +313,9 @@ def RPA_propagator(kxs,kys,ws,Pi,J):
 	return propagtor
 
 ### This takes the propagator and extracts the spectral function 
+### We define this to be -1./(2pi) trIm  tau_3 DR
 def RPA_spectrum(kxs,kys,ws,DRPA):
-	kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
-	### determinant wants last two axes the matrix axes
-	mat = np.moveaxis(DRPA,[0,1],[-2,-1])
-	return 1./np.pi*np.imag( np.linalg.det(mat) )*wvs
+	return -1./(2.*np.pi)*np.imag( np.trace( np.tensordot( pauli[3], DRPA, axes=1 ) ) ) ### should sum_{a,b} tau_3[a,b] D^R[b,a,i,j,k])
 
 ######################################
 ### For demler_tools compatibility ###
@@ -282,7 +328,7 @@ def RPA_spectrum(kxs,kys,ws,DRPA):
 ### 	Chemical potential mu
 ### 	Magnon superexchange J 
 ### It will then save as a pickled file the magnon RPA Greens function as well as the Pi bubbles in the designated location along with arrays of omega and k points used 
-### The pickled output will be [kxs,kys,ws,propagator,Pi0,Pi1]
+### The pickled output will be [kxs,kys,ws,propagator,Pi]
 def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 	### First we load in the hole spectral functions 
 	kxs,kys,ws,A = load_hole_spectrum(hole_filename)
