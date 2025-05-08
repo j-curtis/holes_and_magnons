@@ -136,7 +136,6 @@ def correlator_PBC(f,g):
     
     return np.real(h)
 
-
 #### DEFECTIVE #### 
 ### Home built convolution that is fast for 3D arrays and also respects periodic boundary conditions
 ### Also it zero pads on last (energy) axis so that artifacts are removed 
@@ -265,8 +264,8 @@ def Kramers_Kronig(ws,Im_part):
 ########################################
 
 ### Accepts momentum and frequency and J and returns spin wave matrix kernel 
-### returns (w tau_3 zeta_3 - K_q ) for w -> w+i0^+
-### Shape is [4,4,Nkx,Nky,Nw] may be quite large 
+### returns (w tau_3 - K_q ) for w -> w+i0^+
+### Shape is [2,2,Nkx,Nky,Nw] 
 def LSW_kernel(kxs,kys,ws,J):
 	Nkx = len(kxs)
 	Nky = len(kys)
@@ -277,8 +276,7 @@ def LSW_kernel(kxs,kys,ws,J):
 	dw = ws[1] - ws[0]
 	### We adaptively choose broadening 
 
-	#wvs = wvs + 1.j*zero*np.ones_like(wvs) 
-	zero = 1.2*dw 
+	zero = 3.*dw 
 	wvs = wvs + 1.j*zero*np.ones_like(wvs) 
 
 	a1g = gen_A1g_tensor(kxs,kys,ws)
@@ -295,7 +293,7 @@ def RPA_kernel(kxs,kys,ws,Pi,J):
 	kernel = LSW_kernel(kxs,kys,ws,J) 
 	kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
 	kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
-	kernel[1,0,...] += - Pi[1,...]#np.conjugate(np.flip(Pi[1,...])) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
+	kernel[1,0,...] += - np.conjugate(np.flip(Pi[1,...])) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
 	kernel[1,1,...] += - np.conjugate(np.flip(Pi[0,...])) ### This should be Pi0^A(-q) 
 
 	return kernel
