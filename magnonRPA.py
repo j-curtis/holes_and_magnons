@@ -129,10 +129,9 @@ def correlator_PBC(f,g):
     ### Now we transform back
     h_padded = np.fft.ifftn(h_fft)
 
-    ### Roll back and chop
-    h = np.roll(h_padded,[0,0,pad_size//2],[0,1,2])[:,:,:pad_size]
-
-
+    ### Roll and chop
+    h = np.fft.fftshift(h_padded,axes=-1)
+    h = h[:,:,pad_size:2*pad_size]
     
     return np.real(h)
 
