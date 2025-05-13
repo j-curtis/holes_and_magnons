@@ -16,7 +16,6 @@ from matplotlib import colors as mclr
 S = 0.5 ### Spin 1/2 
 coord_z = 4. ### Coordination number for square lattice
 t = 1. ### We will use units throughout with t = 1 for the time being 
-#zero = 1.e-2*t ### Default infinitesimal broadening factor used to regularize singular magnon kernel. Should be taken commensurate to dw spacing for best results
 
 rng = np.random.default_rng()
 
@@ -257,6 +256,23 @@ def Kramers_Kronig(ws,Im_part):
 			if i != j:
 				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	return Im_part@kk_matrix_real + 1.j*Im_part
+
+
+### Same as above method but uses pre-computed Kramers-Kronig matrix to save on calculation time
+def Kramers_Kronig_precomputed(kk_matrix,Im_part):
+	return Im_part@kk_matrix + 1.j*Im_part
+
+### This method computes the relevant KK matrix for the particular frequency bins 
+def KK_matrix(ws):
+	### First we form the right Kramers Kronig tensor
+	Nws = len(ws)
+	dw = ws[1]-ws[0]
+	kk_matrix_real = np.zeros((Nws,Nws),dtype=complex)
+	for i in range(Nws):
+		for j in range(Nws):
+			if i != j:
+				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
+	return kk_matrix_real
 
 ########################################
 ### Computing Magnon Greens Funciton ###
