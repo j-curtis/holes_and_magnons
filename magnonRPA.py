@@ -103,14 +103,29 @@ def calc_density(kxs,kys,ws,A,mu,T):
 ### Calculating Pi ###
 ######################
 
+### This method generates the appropriate frequency grid for the magnon
+### If the original frequency grid is odd and centered on zero this is the same
+### If it is even it generates a grid which is centered and therefore one entry larger
+### In this case the step size is preserved which means previously the frequency array was [-W...,-dw/2,dw/2,...,W] it is now [-W-dw/2...,-dw,0,dw,...]
+def gen_magnon_freqs(ws):
+	dw = ws[1] - ws[0]
+	Nw = len(ws)
+
+	if Nw %2 == 0:
+		ws = np.concatenate((ws,[ws[-1]+dw]))-dw/2.
+
+	return ws
+
 ### Home built autocorrelation method that is fast for 3D arrays and also respects periodic boundary conditions
 ### This is meant to numerically compute the integral h(q) = int_p f(p) g(p+q)  (does not normalize but computes the sum otherwise)
-### Also automatically pads last (energy) axis so that spectrum does not overlap 
-### It also shifts the last axis to center the spectrum at the end as it should be for a physical energy variable
+### FIRST TWO AXES: Performs standard circular autocorrelation 
+### LAST AXIS: First pads with zeros then performs circular autocorrelation. Then shifts zero frequency to center. Then chops down back to size
+### On the last axis it will by construction return an odd sized array which is either the same array as the frequencies passed (if already odd) or one size larger and is symmetric around zero frequency
 def correlator_PBC(f,g):
-    """Accepts arrays f,g [Nx,Nky,Nw] and returns the circular autocorrelation with automatically zero-padded last axis.
+    """Accepts arrays f,g w/shape (Nx,Nky,Nw) and returns the circular autocorrelation with automatically zero-padded last axis.
     Precisely this retuns z[i,j,k] = sum_{l,m,n} x[l,m,n] * y[i+l,j+m,k+n] padded appropriately on last axis.
     Finally, this shifts the frequencies to the center again at the end. 
+    If number of passed frequencies is even this will generate an extra frequency point at zero to make the result Nw+1.
     """
     pad_size = f.shape[-1]
     
@@ -127,43 +142,18 @@ def correlator_PBC(f,g):
 
     ### Now we transform back
     h_padded = np.fft.ifftn(h_fft)
+    h_padded_size = h_padded.shape[-1]
 
     ### Roll and chop
+    ### We want to roll so that the zero frequency is in the middle 
     h = np.fft.fftshift(h_padded,axes=-1)
-    h = h[:,:,pad_size:2*pad_size]
+    if pad_size % 2 ==0 :
+        h = h[:,:,pad_size:(h_padded_size-pad_size+1)] ### We chop to get odd size with zero in middle
+
+    else:
+        h = h[:,:,pad_size:(h_padded_size-pad_size)]
     
     return np.real(h)
-
-#### DEFECTIVE #### 
-### Home built convolution that is fast for 3D arrays and also respects periodic boundary conditions
-### Also it zero pads on last (energy) axis so that artifacts are removed 
-### It also shifts the last axis to center the spectrum at the end 
-def convolve_PBC(x,y):
-    """Accepts arrays x,y [Nkx,Nky,Nw] and returns the circular convolution with automatically zero-padded last axis.
-    Precisely this retuns z[i,j,k] = sum_{l,m,n} x[l,m,n] * y[i-l,j-m,k-n] padded appropriately on last axis.
-    Finally, this shifts the frequencies to the center again at the end. 
-    """
-    Nw = x.shape[-1]
-    pad_size = Nw ### We automatically pad symmetrically the last axis 
-    x_padded = np.pad(x,((0,0),(0,0),(pad_size,pad_size) )) 
-    y_padded = np.pad(y,((0,0),(0,0),(pad_size,pad_size) ))  
-
-    ### Now we take the FFT of both arrays 
-    x_fft = np.fft.fftn(x_padded)
-    y_fft = np.fft.fftn(y_padded)
-
-    ### Next we take an element-wise product 
-    z_fft = x_fft*y_fft 
-
-    ### Now we transform back
-    z_padded = np.fft.ifftn(z_fft)
-
-    ### We now have to chop off the padded zeros
-    z = np.fft.ifftshift(z_padded,axes=-1) ### Shift to middle of spectrum
-    z = z[...,pad_size:2*pad_size] ### Chop out the padded parts
-    #z = np.fft.fftshift(z,axes=-1) ### Shift back to 
-    
-    return np.real(z)
 
 ### This method returns a tensor of values of gamma_p[i,j]
 def gen_A1g_tensor(kxs,kys,ws):
@@ -183,11 +173,17 @@ def gen_fd_tensor(kxs,kys,ws,mu,T):
 
 def calc_ImPi(kxs,kys,ws,A,mu,T):
 
+	### In case it is not already properly formatted we will generate the correct magnon frequency grid 
+	ws_out = gen_magnon_freqs(ws)
+
 	Nkx = len(kxs)
 	Nky = len(kys)
 	Nw = len(ws)
+	Nw_out = len(ws_out)
+
 	dw = ws[1] - ws[0]
-	ImPi = np.zeros((2,Nkx,Nky,Nw))
+
+	ImPi = np.zeros((2,Nkx,Nky,Nw_out))
 
 	### First we construct the frist vector in the convolution
 	### Form factor tensors  
@@ -222,9 +218,13 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 ### This method is the analytically expected ImPi0 and ImPi1 for box DOS model
 def box_ImPi(kxs,kys,ws,W,mu):
 
+	### In case it is not already properly formatted we will generate the correct magnon frequency grid 
+	ws = gen_magnon_freqs(ws)
+
 	Nkx = len(kxs)
 	Nky = len(kys)
 	Nw = len(ws)
+
 	dw = ws[1] - ws[0]
 	ImPi = np.zeros((2,Nkx,Nky,Nw))
 	a1g = gen_A1g_tensor(kxs,kys,ws)
@@ -257,21 +257,26 @@ def Kramers_Kronig(ws,Im_part):
 				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	return Im_part@kk_matrix_real + 1.j*Im_part
 
-
 ### Same as above method but uses pre-computed Kramers-Kronig matrix to save on calculation time
 def Kramers_Kronig_precomputed(kk_matrix,Im_part):
 	return Im_part@kk_matrix + 1.j*Im_part
 
 ### This method computes the relevant KK matrix for the particular frequency bins 
 def KK_matrix(ws):
+
+	### Should be generated for the magnon frequency lattice 
+	ws = gen_magnon_freqs(ws)
+
 	### First we form the right Kramers Kronig tensor
 	Nws = len(ws)
 	dw = ws[1]-ws[0]
+
 	kk_matrix_real = np.zeros((Nws,Nws),dtype=complex)
 	for i in range(Nws):
 		for j in range(Nws):
 			if i != j:
 				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
+	
 	return kk_matrix_real
 
 ########################################
@@ -282,6 +287,11 @@ def KK_matrix(ws):
 ### returns (w tau_3 - K_q ) for w -> w+i0^+
 ### Shape is [2,2,Nkx,Nky,Nw] 
 def LSW_kernel(kxs,kys,ws,J):
+
+	### To be safe we recast the magnon frequencies in to the right size 
+	ws = gen_magnon_freqs(ws)
+
+
 	Nkx = len(kxs)
 	Nky = len(kys)
 	Nw = len(ws)
@@ -346,6 +356,8 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 	### First we load in the hole spectral functions 
 	kxs,kys,ws,A = load_hole_spectrum(hole_filename)
 
+	ws = gen_magnon_freqs(ws)
+
 	### Next we compute the doping 
 	delta = calc_density(kxs,kys,ws,A,mu,T)
 
@@ -363,7 +375,6 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 		pickle.dump((kxs,kys,ws,magnon_propagator,Pi),savefile)
 
 	return None
-
 
 def main():
 	### Plotting settings 
