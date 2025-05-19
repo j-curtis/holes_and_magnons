@@ -133,26 +133,24 @@ def correlator_PBC(f,g):
     g_padded = np.pad(g,( (0,0),(0,0),(pad_size,pad_size) ) )  
 
     ### Now we take the FFT of both arrays 
-    f_fft = np.fft.fftn(f_padded)
-    g_fft = np.fft.fftn(g_padded)
+    f_fft = np.fft.ifftn(f_padded,norm='forward')
+    g_fft = np.fft.ifftn(g_padded,norm='forward')
     
     ### Next we take an element-wise product 
     ### conjugate to compute correlation instead of convolution
-    h_fft = f_fft*np.conjugate(g_fft) 
+    h_fft = np.conjugate(f_fft)*g_fft
 
     ### Now we transform back
-    h_padded = np.fft.ifftn(h_fft)
-    h_padded_size = h_padded.shape[-1]
-
-    ### Roll and chop
-    ### We want to roll so that the zero frequency is in the middle 
+    h_padded = np.fft.fftn(h_fft,norm='forward')
+    
     h = np.fft.fftshift(h_padded,axes=-1)
+
     if pad_size % 2 ==0 :
-        h = h[:,:,pad_size:(h_padded_size-pad_size+1)] ### We chop to get odd size with zero in middle
+        h = h[...,pad_size:(h_padded.shape[-1]-pad_size+1)] ### We chop to get odd size with zero in middle
 
     else:
-        h = h[:,:,pad_size:(h_padded_size-pad_size)]
-    
+        h = h[...,pad_size:(h_padded.shape[-1]-pad_size)]
+
     return np.real(h)
 
 ### This method returns a tensor of values of gamma_p[i,j]
@@ -168,9 +166,9 @@ def gen_fd_tensor(kxs,kys,ws,mu,T):
 
 ### Pi is computed as a convolution of the two spectral functions.
 ### There are two functions: Pi0 and Pi1. These have imaginary parts 
-### ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px+qx,py+qy]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### CORRECTED -- I THINK ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px+qx,py+qy]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
 ### ImPi[1,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py] gamma[px+qx,py+qy]  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
-
 def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	### In case it is not already properly formatted we will generate the correct magnon frequency grid 
@@ -202,16 +200,18 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	### Here we will use the home built method
 	convolver = correlator_PBC ### This is the convolution function we will call
 
-	### This convolver does not normalize the sum (so we must multiple by appropriate normalizations) and does not center the spectrum 
+	### This convolver does not normalize the sum (so we must multiple by appropriate normalizations) 
+	### It should be the case that (up to step size) convolver(f,g) -> int_x f(x) g(x+y) 
  
-	ImPi[0,...] = convolver(tensor_00, tensor_21) - convolver(tensor_01, tensor_20) 
+	ImPi[0,...] = convolver(tensor_20, tensor_01) - convolver(tensor_21, tensor_00) 
+	#ImPi[0,...] = convolver(tensor_00, tensor_21) - convolver(tensor_01, tensor_20) 
 	ImPi[1,...] = convolver(tensor_10, tensor_11) - convolver(tensor_11, tensor_10)
 
 	#ImPi[0,...] = np.flip( convolver(np.flip(tensor_00),tensor_21) - convolver(np.flip(tensor_01), tensor_20) )
 	#ImPi[1,...] = np.flip( convolver(np.flip(tensor_10),tensor_11) - convolver(np.flip(tensor_11),tensor_10) )
 
 
-	ImPi *= 2.*np.pi*S*coord_z**2*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
+	ImPi *= -2.*np.pi*S*coord_z**2*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
 
 	return ImPi
 
