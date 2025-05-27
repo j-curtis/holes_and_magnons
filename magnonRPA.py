@@ -318,8 +318,9 @@ def RPA_kernel(kxs,kys,ws,Pi,J):
 	kernel = LSW_kernel(kxs,kys,ws,J) 
 	kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
 	kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
-	kernel[1,0,...] += - np.conjugate(np.flip(Pi[1,...])) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
-	kernel[1,1,...] += - np.conjugate(np.flip(Pi[0,...])) ### This should be Pi0^A(-q) 
+	kernel[1,0,...] += - np.conjugate(np.roll(np.flip(Pi[1,...]),[1,1,0],[0,1,2] )) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
+	kernel[1,1,...] += - np.conjugate(np.roll(np.flip(Pi[0,...]),[1,1,0],[0,1,2] )) ### This should be Pi0^A(-q) 
+	### Note because the np.flip flips the 0,0 point to the end we need to roll the momenta back to zero or else the result will be shifted from reflection symmetric by 1 dq unit 
 
 	return kernel
 
@@ -376,153 +377,143 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 
 	return None
 
-def main():
-	### Plotting settings 
-	#plt.rc('figure', dpi=100)
-	#plt.rc('figure',figsize=(4,1.7))
-	plt.rc('font', family = 'Times New Roman')
-	plt.rc('font', size = 14)
-	plt.rc('text', usetex=True)
-	plt.rc('xtick', labelsize=14)
-	plt.rc('ytick', labelsize=14)
-	plt.rc('axes', labelsize=18)
-	plt.rc('lines', linewidth=2.5)
 
-	T = 0.11*t
-	U = 7.5*t
-	J = 4.*t**2/U
-	mu = -1*t ### Chemical potential 
 
-	figDirectory = "../figures/"
-	dataDirectory = "../data/"
+#####################################
+### Set of tools for time-ordered ###
+#####################################
 
-	saveFigs = False
+### These calculations will perform the time-ordered RPA calculation using the same time-ordered spectral functions given from SCBA
 
-	holesDirectory = dataDirectory+"hole_spectra/03252025/"
-	holesFile = "Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"#"Hole_Spectral_functionJz0.05_alfa0.999_Nx20_Ny20"
+class time_ordered:
 
-	kxs,kys,ws,A = load_hole_spectrum(holesDirectory+holesFile)
+	def __init__(self):
+		self.kx = None ### momenta
+		self.ky = None 
+		self.w = None ### frequencies
+		self.G = None ### Time-ordered GF of hole 
+		self.A = None ### Spectral function of hole
+
+		self.dw = None 
+
+		self.mu = None 
+		self.J = None ### LSWT superexchange J 
 	
-	print("Hole doping: ",calc_density(kxs,kys,ws,A,mu,T))
-
-	### Calculate RPA spectra from hole spectra 
-	ImPi0,ImPi1 = calc_ImPi(kxs,kys,ws,A,mu,T)
-	Pi0 = Kramers_Kronig(ws,ImPi0)
-	Pi1 = Kramers_Kronig(ws,ImPi1)
-
-	### Magnon propagators 
-	magnon_kernel = RPA_kernel(kxs,kys,ws,Pi0,Pi1,J)
-	magnon_propagator = np.zeros_like(magnon_kernel)
-
-	for i in range(len(kxs)):
-		for j in range(len(kys)):
-			for k in range(len(ws)):
-				magnon_propagator[:,:,i,j,k] = np.linalg.inv(magnon_kernel[:,:,i,j,k])
+	### This method loads the time-orderd GF 
+	@classmethod 
+	def load_G(cls,hole_filename):
+		with open(hole_filename,'rb') as f:
+			kx,ky,w,G = pkl.load(f)
 
 
-	### Plotting
+		return kx,ky,np.real(w),G
+
+	### This method convers the retarded G to a TO G
+	@classmethod 
+	def G_R2TO(cls,kxs,kys,ws,G):
+		G_r = np.real(G)
+		G_i = np.imag(G)
+
+		kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws)
+
+		sign_w= np.sign(wvs)
+
+		G_TO = G_r + 1.j*sign_w*G_i
+
+		return G_TO
+
+	### This method introduces a chemical potential to the Green's function which otherwise has no mu 
+	@classmethod
+	def add_mu(cls,G,mu):
+		return 1./( 1./G + mu*np.ones_like(G) ) ### 1/( G^-1 +mu ) = 1/(w +mu - ....)
+
+	### This method computes the density from the spectral function 
+	@classmethod
+	def calc_density(cls,kxs,kys,ws,G,mu):
+		G = cls.add_mu(G,mu)
+		A = 1./np.pi*np.abs(np.imag(G)) ### spectral function from TO GF 
+
+		kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws)
+
+		dw = ws[1]-ws[0]
+		Nkx = len(kxs)
+		Nky = len(kys)
+
+		f = np.ones_like(wvs)
+		f[wvs>0.]=0. ### Assign zeros to all entries above zero -- chemical potential is already included in the GF 
+
+		delta = np.sum(A*f)*dw/float(Nkx*Nky)
+		return delta 
+
+	### This will compute the sum of the form int_x f(x)g(x+y) for complex functions f,g
+	@classmethod
+	def correlator_PBC(cls,f,g):
+		"""Accepts arrays f,g w/shape (Nx,Nky,Nw) and returns the circular autocorrelation with automatically zero-padded last axis.
+		First this computes h[i,j,k] = sum_{l,m,n} f[l,m,n] * g[i+l,j+m,k+n] padded appropriately on last axis.
+		Finally, this shifts the frequencies to the center again at the end. 
+		If number of passed frequencies is even this will generate an extra frequency point at zero to make the result Nw+1.
+		"""
+		pad_size = f.shape[-1]
+
+		f_padded = np.pad(f,( (0,0),(0,0),(pad_size,pad_size) ) ) 
+		g_padded = np.pad(g,( (0,0),(0,0),(pad_size,pad_size) ) )  
+
+		### Now we take the FFT of both arrays 
+		f_fft = np.fft.ifftn(f_padded,norm='forward')
+		g_fft = np.fft.ifftn(g_padded,norm='forward')
+
+		### Next we take an element-wise product 
+		### conjugate to compute correlation instead of convolution
+		h_fft = np.conjugate(f_fft)*g_fft
+
+		### Now we transform back
+		h_padded = np.fft.fftn(h_fft,norm='forward')
+
+		h = np.fft.fftshift(h_padded,axes=-1)
+
+		if pad_size % 2 ==0 :
+		    h = h[...,pad_size:(h_padded.shape[-1]-pad_size+1)] ### We chop to get odd size with zero in middle
+
+		else:
+		    h = h[...,pad_size:(h_padded.shape[-1]-pad_size)]
+
+		return h
+
+	### This method computes the integral of the two Greens functions using the convolution method 
+	@classmethod
+	def calc_Pi(cls,kxs,kys,ws,G,mu):
+		### First we introduce the chemical potential 
+		G = cls.add_mu(G,mu)
+		### First we construct the proper frequency arrays 
+		### In case it is not already properly formatted we will generate the correct magnon frequency grid 
+		ws_out = gen_magnon_freqs(ws)
+
+		Nkx = len(kxs)
+		Nky = len(kys)
+		Nw = len(ws)
+		Nw_out = len(ws_out)
+
+		dw = ws[1] - ws[0]
+
+		Pi = np.zeros((2,2,Nkx,Nky,Nw_out),dtype=complex)
+
+		### First we construct the frist vector in the convolution
+		### Form factor tensors  
+		a1g = gen_A1g_tensor(kxs,kys,ws)
+
+		prefactor = -2.j*S*coord_z**2*t**2*dw/float(Nkx*Nky)
+
+		### Now we compute the convolutions 
+		### This will just be modified slightly to allow for complex functions 
+		correlator = cls.correlator_PBC
+
+		Pi[0,0,...] = prefactor*correlator(a1g**2*G,G)
+		Pi[0,1,...] = prefactor*correlator(a1g*G,a1g*G)
+		Pi[1,0,...] = prefactor*correlator(a1g*G,a1g*G)
+		Pi[1,1,...] = prefactor*correlator(G,a1g**2*G)
 
 
-	### Frequency cuts of magnon propagator spectral function trace 
-	indices = [ [0,0],[3,0],[6,0],[9,0],[12,0],[15,0]]
-	clrs = cm.gist_heat(np.linspace(0.2,0.9,len(indices)))
-	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.2f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.2f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
-	
-	if True:
-		for j in range(len(indices)):
-			i = indices[j]
-			spec =np.abs( -1./np.pi* np.imag( np.linalg.det( magnon_propagator[:,:,i[0],i[1],:],axes=[0,1] ) )/ws)
-			plt.plot(ws/t,spec,label=label_strings[j],color=clrs[j])
-			
-		plt.xlabel(r'$\omega/t$')
-		plt.xlim(-3.*J,3.*J)
-		plt.yscale('log')
-		plt.ylabel(r'$-\frac{1}{\pi}$Im tr$D(\omega,\mathbf{q})/t$')
-		plt.legend()
-		#if saveFigs: plt.savefig(figDirectory+"/Magnon_spectrum.pdf",bbox_inches='tight')
-		plt.show()
-
-
-	### Frequency momentum plot of magnon spectral function
-	if True:
-		spec = np.abs(-1./np.pi* np.imag( np.trace( magnon_propagator[:,:,:,0,:] ) )/ws)
-		plt.imshow(np.transpose(spec),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.8,cmap='coolwarm',norm=mclr.LogNorm())
-		plt.ylabel(r'$\omega/t$')
-		plt.ylim(-3.*J,3.*J)
-		plt.xlabel(r'$q_x$')
-		plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
-		plt.colorbar()
-		#if saveFigs: plt.savefig(figDirectory+"/Magnon_spectrum.pdf",bbox_inches='tight')
-		plt.show()
-
-	### Frequency dependence of Pi for kx cut 
-	plt.imshow(np.transpose(ImPi0[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
-	plt.xlabel(r'$q_x$')
-	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
-	plt.ylabel(r'$\omega/t$')
-	plt.colorbar()
-	if saveFigs: plt.savefig(figDirectory+"/ImPi0_w_qx.pdf",bbox_inches='tight')
-	plt.show()
-
-	plt.imshow(np.transpose(ImPi1[:,0,:]),origin='lower',extent=[kxs[0],kxs[-1],ws[0],ws[-1]],aspect=0.4,cmap='coolwarm')
-	plt.xlabel(r'$q_x$')
-	plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
-	plt.ylabel(r'$\omega/t$')
-	plt.colorbar()
-	if saveFigs: plt.savefig(figDirectory+"/ImPi1_w_qx.pdf",bbox_inches='tight')
-	plt.show()
-
-
-	### Frequency cuts of magnon propagator spectral function trace 
-	indices = [ [0,0],[10,0],[0,10],[10,10]]
-	clrs = ['red','green','blue','purple']
-	label_strings = [ r'$\mathbf{q}=($'+"{qx:0.0f}".format(qx=kxs[i[0]]/np.pi) + r'$\pi,$' + "{qy:0.0f}".format(qy=kys[i[1]]/np.pi) + r'$\pi)$'  for i in indices]
-	
-
-	### Frequency cuts of polarizations of magnons
-	if True:
-		for j in range(len(indices)):
-			i = indices[j]
-			plt.plot(ws/t,np.real(Pi0[i[0],i[1],:])/t,label=label_strings[j])
-		
-		plt.xlabel(r'$\omega/t$')
-		plt.ylabel(r'Re$\Pi_0(\omega,\mathbf{q})/t$')
-		plt.legend()
-		if saveFigs: plt.savefig(figDirectory+"/RePi0.pdf",bbox_inches='tight')
-		plt.show()
-
-	if True:
-		for j in range(len(indices)):
-			i = indices[j]
-			plt.plot(ws/t,np.imag(Pi0[i[0],i[1],:])/t,label=label_strings[j])
-		
-		plt.xlabel(r'$\omega/t$')
-		plt.ylabel(r'Im$\Pi_0(\omega,\mathbf{q})/t$')
-		plt.legend()
-		if saveFigs: plt.savefig(figDirectory+"/ImPi0.pdf",bbox_inches='tight')
-		plt.show()
-
-	if True:
-		for j in range(len(indices)):
-			i = indices[j]
-			plt.plot(ws/t,np.real(Pi1[i[0],i[1],:])/t,label=label_strings[j])
-		
-		plt.xlabel(r'$\omega/t$')
-		plt.ylabel(r'Re$\Pi_1(\omega,\mathbf{q})/t$')
-		plt.legend()
-		if saveFigs: plt.savefig(figDirectory+"/RePi1.pdf",bbox_inches='tight')
-		plt.show()
-
-	if True:
-		for j in range(len(indices)):
-			i = indices[j]
-			plt.plot(ws/t,np.imag(Pi1[i[0],i[1],:])/t,label=label_strings[j])
-		
-		plt.xlabel(r'$\omega/t$')
-		plt.ylabel(r'Im$\Pi_1(\omega,\mathbf{q})/t$')
-		plt.legend()
-		if saveFigs: plt.savefig(figDirectory+"/ImPi1.pdf",bbox_inches='tight')
-		plt.show()
+		return Pi 
 
 
 
