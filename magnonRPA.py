@@ -165,10 +165,11 @@ def gen_fd_tensor(kxs,kys,ws,mu,T):
 	return fd(wv,mu,T)
 
 ### Pi is computed as a convolution of the two spectral functions.
-### There are two functions: Pi0 and Pi1. These have imaginary parts 
-### CORRECTED -- I THINK ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px+qx,py+qy]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
-### ImPi[0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
-### ImPi[1,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py] gamma[px+qx,py+qy]  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### There are four functions which we compute directly as a matrix: Pi_{00} Pi_{01} Pi_{10} Pi_{11}
+### ImPi[0,0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py]^2 A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### ImPi[0,1,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py] gamma[px+qx,py+qy]  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### ImPi[1,0,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px,py] gamma[px+qx,py+qy]  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
+### ImPi[1,1,qx,qy,w] = -2 pi S z^2 t^2 int_{px,py,e} gamma[px+qx,py+qy]^2  A[px,py,e] A[px+qx,py+qy,e+w](f[e+w] - f[e])
 def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	### In case it is not already properly formatted we will generate the correct magnon frequency grid 
@@ -181,7 +182,7 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 
 	dw = ws[1] - ws[0]
 
-	ImPi = np.zeros((2,Nkx,Nky,Nw_out))
+	ImPi = np.zeros((2,2,Nkx,Nky,Nw_out))
 
 	### First we construct the frist vector in the convolution
 	### Form factor tensors  
@@ -203,13 +204,10 @@ def calc_ImPi(kxs,kys,ws,A,mu,T):
 	### This convolver does not normalize the sum (so we must multiple by appropriate normalizations) 
 	### It should be the case that (up to step size) convolver(f,g) -> int_x f(x) g(x+y) 
  
-	ImPi[0,...] = convolver(tensor_20, tensor_01) - convolver(tensor_21, tensor_00) 
-	#ImPi[0,...] = convolver(tensor_00, tensor_21) - convolver(tensor_01, tensor_20) 
-	ImPi[1,...] = convolver(tensor_10, tensor_11) - convolver(tensor_11, tensor_10)
-
-	#ImPi[0,...] = np.flip( convolver(np.flip(tensor_00),tensor_21) - convolver(np.flip(tensor_01), tensor_20) )
-	#ImPi[1,...] = np.flip( convolver(np.flip(tensor_10),tensor_11) - convolver(np.flip(tensor_11),tensor_10) )
-
+	ImPi[0,0,...] = convolver(tensor_20, tensor_01) - convolver(tensor_21, tensor_00) 
+	ImPi[0,1,...] = convolver(tensor_10, tensor_11) - convolver(tensor_11, tensor_10)
+	ImPi[1,0,...] = convolver(tensor_10, tensor_11) - convolver(tensor_11, tensor_10)
+	ImPi[1,1,...] = convolver(tensor_00, tensor_21) - convolver(tensor_01, tensor_20)
 
 	ImPi *= -2.*np.pi*S*coord_z**2*t**2*dw/float(Nkx*Nky) ### The momentum integrals are normalized by total number of points, energy by the differential
 
@@ -301,7 +299,7 @@ def LSW_kernel(kxs,kys,ws,J):
 	dw = ws[1] - ws[0]
 	### We adaptively choose broadening 
 
-	zero = 3.*dw 
+	zero = 2.*dw 
 	wvs = wvs + 1.j*zero*np.ones_like(wvs) 
 
 	a1g = gen_A1g_tensor(kxs,kys,ws)
@@ -316,13 +314,13 @@ def LSW_kernel(kxs,kys,ws,J):
 ### We must be careful as they may not be symmetric in frequency or momentum 
 def RPA_kernel(kxs,kys,ws,Pi,J):
 	kernel = LSW_kernel(kxs,kys,ws,J) 
-	kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
-	kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
-	kernel[1,0,...] += - np.conjugate(np.roll(np.flip(Pi[1,...]),[1,1,0],[0,1,2] )) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
-	kernel[1,1,...] += - np.conjugate(np.roll(np.flip(Pi[0,...]),[1,1,0],[0,1,2] )) ### This should be Pi0^A(-q) 
+	#kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
+	#kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
+	#kernel[1,0,...] += - np.conjugate(np.roll(np.flip(Pi[1,...]),[1,1,0],[0,1,2] )) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
+	#kernel[1,1,...] += - np.conjugate(np.roll(np.flip(Pi[0,...]),[1,1,0],[0,1,2] )) ### This should be Pi0^A(-q) 
 	### Note because the np.flip flips the 0,0 point to the end we need to roll the momenta back to zero or else the result will be shifted from reflection symmetric by 1 dq unit 
 
-	return kernel
+	return kernel - Pi ### We can just add the kernel as it already has the correct matrix form 
 
 ### This returns the RPA propagator
 def RPA_propagator(kxs,kys,ws,Pi,J):
@@ -336,10 +334,24 @@ def RPA_propagator(kxs,kys,ws,Pi,J):
 
 	return propagtor
 
+### This returns the RPA propagator
+### The matrix is 2x2 so we can greatly accelerate by inverting by hand 
+def RPA_propagator_analytic(kxs,kys,ws,Pi,J):
+	kernel = RPA_kernel(kxs,kys,ws,Pi,J)
+	propagtor = np.zeros_like(kernel)
+
+	det = kernel[0,0,...]*kernel[1,1,...] - kernel[0,1,...]*kernel[1,0,...]
+	propagtor[0,0,...] = kernel[1,1,...]/det 
+	propagtor[0,1,...] = -kernel[0,1,...]/det 
+	propagtor[1,0,...] = -kernel[1,0,...]/det 
+	propagtor[1,1,...] = kernel[0,0,...]/det 
+
+	return propagtor
+
 ### This takes the propagator and extracts the spectral function 
 ### We define this to be -1./(2pi) trIm  tau_3 DR
 def RPA_spectrum(kxs,kys,ws,DRPA):
-	return -1./(2.*np.pi)*np.imag( np.trace( np.tensordot( pauli[3], DRPA, axes=1 ) ) ) ### should sum_{a,b} tau_3[a,b] D^R[b,a,i,j,k])
+	return -1./(2.*np.pi)*np.imag( DRPA[0,0,...] - DRPA[1,1,...] ) ### should sum_{a,b} tau_3[a,b] D^R[b,a,i,j,k])
 
 ######################################
 ### For demler_tools compatibility ###
@@ -424,13 +436,19 @@ class time_ordered:
 
 	### This method introduces a chemical potential to the Green's function which otherwise has no mu 
 	@classmethod
-	def add_mu(cls,G,mu):
-		return 1./( 1./G + mu*np.ones_like(G) ) ### 1/( G^-1 +mu ) = 1/(w +mu - ....)
+	def add_mu(cls,ws,G,mu):
+		### If the time-ordered Green's function is for mu = 0 we can get the finite mu case by flipping the sign of the imaginary part at E = mu  
 
+		G_re = np.real(G)
+		G_im = np.abs(np.imag(G))
+		G_im[...,ws>mu] *= -1. ### Flip the sign of the imaginary part for frequencies less than chemical potential 
+
+
+		return G_re + 1.j*G_im
+	
 	### This method computes the density from the spectral function 
 	@classmethod
 	def calc_density(cls,kxs,kys,ws,G,mu):
-		G = cls.add_mu(G,mu)
 		A = 1./np.pi*np.abs(np.imag(G)) ### spectral function from TO GF 
 
 		kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws)
@@ -440,7 +458,7 @@ class time_ordered:
 		Nky = len(kys)
 
 		f = np.ones_like(wvs)
-		f[wvs>0.]=0. ### Assign zeros to all entries above zero -- chemical potential is already included in the GF 
+		f[wvs>mu]=0. ### Assign zeros to all entries above zero -- chemical potential is already included in the GF 
 
 		delta = np.sum(A*f)*dw/float(Nkx*Nky)
 		return delta 
@@ -483,7 +501,7 @@ class time_ordered:
 	@classmethod
 	def calc_Pi(cls,kxs,kys,ws,G,mu):
 		### First we introduce the chemical potential 
-		G = cls.add_mu(G,mu)
+		G = cls.add_mu(ws,G,mu)
 		### First we construct the proper frequency arrays 
 		### In case it is not already properly formatted we will generate the correct magnon frequency grid 
 		ws_out = gen_magnon_freqs(ws)
