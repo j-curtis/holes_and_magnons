@@ -81,6 +81,12 @@ def gen_box_A(kxs,kys,ws,W):
             A[:,:,i] = 1./W*np.ones((Nkx,Nky))
     return A
 
+
+def gen_semicircle_A(kxs,kys,ws,W): 
+    kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
+    out = np.zeros
+    return 8./(np.pi*W**2)*np.real( np.sqrt((W/2.)**2 - (wvs)**2+0.j))
+
 ###################
 ### Hole Doping ###
 ###################
@@ -252,7 +258,7 @@ def Kramers_Kronig(ws,Im_part):
 	for i in range(Nws):
 		for j in range(Nws):
 			if i != j:
-				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
+				kk_matrix_real[i,j] = -dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	return Im_part@kk_matrix_real + 1.j*Im_part
 
 ### Same as above method but uses pre-computed Kramers-Kronig matrix to save on calculation time
@@ -273,7 +279,7 @@ def KK_matrix(ws):
 	for i in range(Nws):
 		for j in range(Nws):
 			if i != j:
-				kk_matrix_real[i,j] = dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
+				kk_matrix_real[i,j] = -dw/(np.pi)*1./(ws[j] - ws[i]) ### Sign is such that this will reconstruct the imaginary part to match the original imaginary part
 	
 	return kk_matrix_real
 
@@ -389,6 +395,72 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 
 	return None
 
+######################################################
+### Set of tools for generating spectral functions ###
+######################################################
+
+class fermion_spectra:
+	"""Set of methods for generating fermionic spectral functions"""
+
+	def __init__(self,Nkx,Nky,Nw,wmax):
+
+		### These parameters set the spectral function array sizes 
+		self.Nkx = Nkx
+		self.Nky = Nky 
+		self.Nw = Nw 
+
+		### Now we generate arrays 
+		self.kxs = np.linspace(0.,2.*np.pi,Nkx,endpoint=False)
+		self.kys = np.linspace(0.,2.*np.pi,Nky,endpoint=False)
+		self.ws = np.linspace(-wmax,wmax,Nw)
+
+		### Now format as tensor meshgrids 
+		self.kx_grid,self.ky_grid,self.w_grid = np.meshgrid(self.kxs,self.kys,self.ws,indexing='ij')
+
+		### The spectral function will be contained in here as a tensor 
+		self.A = np.zeros((Nkx,Nky,Nw)) 
+		self.type = None ### This is a flag which indicates what kind of spectral function we have, descriptively
+
+	### This method generates a spectral function with flat semicircular in frequency shape 
+	def generate_semicircle(self,W):
+		self.type = 'Semicircle'
+		self.W = W 
+		self.A = 8./(np.pi*W**2)*np.real( np.sqrt((W/2.)**2 - (self.w_grid)**2+0.j))
+
+	### This method generates a spectral function in the shape of the YRZ ansatz 
+	### Based on parameterization from James, Konik, Rice PRB 86 100508 (2012)
+	### G^-1 = omega - xi - Delta^2/(omega + xi) where xi = -4t gamma_k  and Delta = delta_0 (coskx - cos ky )
+	def generate_YRZ(self,t,Delta_RVB,eta):
+		self.type = 'YRZ'
+		self.t = t 
+		self.Delta_RVB = Delta_RVB
+		self.eta = eta 
+
+		xi = -4.*self.t*A1g(self.kx_grid,self.ky_grid)
+		delta = Delta_RVB*B2g(self.kx_grid,self.ky_grid)
+
+		G = ( self.w_grid + 1.j*self.eta*np.ones_like(self.w_grid) - xi - (delta)**2/(self.w_grid + 1.j*eta*np.ones_like(self.w_grid) + xi ) )**(-1)
+
+		self.A = -1./np.pi*np.imag(G)
+		
+
+
+
+
+
+
+	### A simple plotting method 
+	def plot_spectrum(self,bounds):
+		### First we find a good frequency range 
+		extents = [self.kxs[0],self.kxs[-1],self.ws[0],self.ws[-1]]
+
+		plt.imshow(np.transpose(self.A[:,0,:]),extent=extents,origin='lower',cmap='magma',aspect=1.5)
+		plt.colorbar()
+		plt.ylim(bounds[0],bounds[1])
+		plt.xlabel(r'$k_x$')
+		plt.ylabel(r'$\omega/t$')
+		plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
+		plt.show()
 
 
 #####################################
