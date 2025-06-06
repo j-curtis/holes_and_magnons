@@ -81,7 +81,6 @@ def gen_box_A(kxs,kys,ws,W):
             A[:,:,i] = 1./W*np.ones((Nkx,Nky))
     return A
 
-
 def gen_semicircle_A(kxs,kys,ws,W): 
     kxvs,kyvs,wvs = np.meshgrid(kxs,kys,ws,indexing='ij')
     out = np.zeros
@@ -320,12 +319,7 @@ def LSW_kernel(kxs,kys,ws,J):
 ### We must be careful as they may not be symmetric in frequency or momentum 
 def RPA_kernel(kxs,kys,ws,Pi,J):
 	kernel = LSW_kernel(kxs,kys,ws,J) 
-	#kernel[0,0,...] += - Pi[0,...] ### This should be Pi0^R(q)
-	#kernel[0,1,...] += - Pi[1,...] ### This should be Pi1^R(q)
-	#kernel[1,0,...] += - np.conjugate(np.roll(np.flip(Pi[1,...]),[1,1,0],[0,1,2] )) ### This is Pi1^A(-q) and in principle this should be the same as Pi1^R(q) 
-	#kernel[1,1,...] += - np.conjugate(np.roll(np.flip(Pi[0,...]),[1,1,0],[0,1,2] )) ### This should be Pi0^A(-q) 
-	### Note because the np.flip flips the 0,0 point to the end we need to roll the momenta back to zero or else the result will be shifted from reflection symmetric by 1 dq unit 
-
+	
 	return kernel - Pi ### We can just add the kernel as it already has the correct matrix form 
 
 ### This returns the RPA propagator
@@ -395,14 +389,37 @@ def compute_magnon_propagator(save_filename,hole_filename,T,mu,J):
 
 	return None
 
-######################################################
-### Set of tools for generating spectral functions ###
-######################################################
-
+############################################################
+### Set of tools for handling fermion spectral functions ###
+############################################################
 class fermion_spectra:
 	"""Set of methods for generating fermionic spectral functions"""
 
-	def __init__(self,Nkx,Nky,Nw,wmax):
+	def __init__(self):
+
+		### These parameters set the spectral function array sizes 
+		self.Nkx = None
+		self.Nky = None 
+		self.Nw = None 
+
+		### Arrays of frequencies and momenta for spectral functions 
+		self.kxs = None
+		self.kys = None
+		self.ws = None
+
+		### Meshgrids of arguments 
+		self.kx_grid = None
+		self.ky_grid = None
+		self.w_grid = None
+
+		### The spectral function will be contained in here as a tensor 
+		self.A = None
+
+		### Metadata 
+		self.type = None ### This is a flag which indicates what kind of spectral function we have, descriptively
+
+	### This method generates a spectral function with flat semicircular in frequency shape 
+	def generate_semicircle(self,Nkx,Nky,Nw,wmax,W):
 
 		### These parameters set the spectral function array sizes 
 		self.Nkx = Nkx
@@ -413,41 +430,93 @@ class fermion_spectra:
 		self.kxs = np.linspace(0.,2.*np.pi,Nkx,endpoint=False)
 		self.kys = np.linspace(0.,2.*np.pi,Nky,endpoint=False)
 		self.ws = np.linspace(-wmax,wmax,Nw)
+		self.dw = ws[1]-ws[0]
 
 		### Now format as tensor meshgrids 
 		self.kx_grid,self.ky_grid,self.w_grid = np.meshgrid(self.kxs,self.kys,self.ws,indexing='ij')
 
 		### The spectral function will be contained in here as a tensor 
-		self.A = np.zeros((Nkx,Nky,Nw)) 
-		self.type = None ### This is a flag which indicates what kind of spectral function we have, descriptively
-
-	### This method generates a spectral function with flat semicircular in frequency shape 
-	def generate_semicircle(self,W):
-		self.type = 'Semicircle'
-		self.W = W 
 		self.A = 8./(np.pi*W**2)*np.real( np.sqrt((W/2.)**2 - (self.w_grid)**2+0.j))
+
+		self.type = 'semicircle'
+		self.W = W 
 
 	### This method generates a spectral function in the shape of the YRZ ansatz 
 	### Based on parameterization from James, Konik, Rice PRB 86 100508 (2012)
 	### G^-1 = omega - xi - Delta^2/(omega + xi) where xi = -4t gamma_k  and Delta = delta_0 (coskx - cos ky )
-	def generate_YRZ(self,t,Delta_RVB,eta):
-		self.type = 'YRZ'
-		self.t = t 
-		self.Delta_RVB = Delta_RVB
-		self.eta = eta 
+	def generate_YRZ(self,Nkx,Nky,Nw,wmax,t,Delta_RVB,eta):
+		### These parameters set the spectral function array sizes 
+		self.Nkx = Nkx
+		self.Nky = Nky 
+		self.Nw = Nw 
 
+		### Now we generate arrays 
+		self.kxs = np.linspace(0.,2.*np.pi,Nkx,endpoint=False)
+		self.kys = np.linspace(0.,2.*np.pi,Nky,endpoint=False)
+		self.ws = np.linspace(-wmax,wmax,Nw)
+		self.dw = ws[1]-ws[0]
+
+		### Now format as tensor meshgrids 
+		self.kx_grid,self.ky_grid,self.w_grid = np.meshgrid(self.kxs,self.kys,self.ws,indexing='ij')
+
+		### The spectral function will be contained in here as a tensor 
 		xi = -4.*self.t*A1g(self.kx_grid,self.ky_grid)
 		delta = Delta_RVB*B2g(self.kx_grid,self.ky_grid)
 
 		G = ( self.w_grid + 1.j*self.eta*np.ones_like(self.w_grid) - xi - (delta)**2/(self.w_grid + 1.j*eta*np.ones_like(self.w_grid) + xi ) )**(-1)
 
-		self.A = -1./np.pi*np.imag(G)
-		
+		self.A = G2A(G)
 
+		self.type = 'yrz'
+		self.t = t 
+		self.Delta_RVB = Delta_RVB
+		self.eta = eta 
 
+	### This method will load a numerically computed spectral function from the specified file location 
+	def load_hole_spectrum(self,hole_filename):
 
+		with open(hole_filename,'rb') as f:
+			kxs,kys,ws,G = pkl.load(f)
 
+		self.type = 'numerical'
+		self.hole_filename = hole_filename
 
+		self.kxs = kxs
+		self.kys = kys 
+		self.ws = np.real(ws) ### sometimes the frequencies are passed as a complex array 
+		self.dw = ws[1]-ws[0]
+
+		self.Nkx = len(self.kxs)
+		self.Nky = len(self.kys)
+		self.Nw = len(self.ws)
+
+		self.kx_grid,self.ky_grid,self.w_grid = np.meshgrid(self.kxs,self.kys,self.ws,indexing='ij')
+		self.A = np.abs(G2A(G)) ### We need to take abs of spectral function which is directly computed form time-ordered G and needs to be converted to retarded
+
+	### This method computes the doping density as a function of chemical potential and temperature 
+	def calc_doping(self,mus = None,Ts=None):
+		### We compute the doping vs chemical potential for each mu in the passed list and given temperature
+		### If no mus are passed we do it for each frequency step 
+		if (mus == None).any():
+			mus = self.ws.copy()
+
+		if (Ts == None).any():
+			Ts = np.array([0.001*t]) ### default to just zero temperature 
+
+		self.mus = mus
+		self.Ts = Ts 
+
+		### Now we encode in a meshgrid 
+		self.mu_grid, self.T_grid = np.meshgrid(mus,Ts,indexing='ij')
+		self.dopings = np.zeros_like(self.mu_grid)
+
+		for i in range(len(mus)):
+			for j in range(len(Ts)):
+				fd_tensor = gen_fd_tensor(self.kxs,self.kys,self.ws,self.mu_grid[i,j],self.T_grid[i,j])
+
+				occ_tensor = 0.5*np.ones_like(fd_tensor) - fd_tensor
+
+				self.dopings[i,j] = np.mean(occ_tensor*self.A)*self.dw*float(self.Nw) ### This should be the density 
 
 	### A simple plotting method 
 	def plot_spectrum(self,bounds):
@@ -462,13 +531,9 @@ class fermion_spectra:
 		plt.xticks([0,np.pi/2.,np.pi,3.*np.pi/2.,2.*np.pi],[r'0',r'$\pi/2$',r'$\pi$',r'$3\pi/2$',r'$2\pi$'])
 		plt.show()
 
-
 #####################################
 ### Set of tools for time-ordered ###
 #####################################
-
-### These calculations will perform the time-ordered RPA calculation using the same time-ordered spectral functions given from SCBA
-
 class time_ordered:
 
 	def __init__(self):
