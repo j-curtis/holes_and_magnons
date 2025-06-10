@@ -415,6 +415,13 @@ class fermion_spectra:
 		### The spectral function will be contained in here as a tensor 
 		self.A = None
 
+		### Data related to doping dependence
+		self.mus = None
+		self.Ts = None 
+		self.mu_grid = None 
+		self.T_grid = None 
+		self.dopings = None 
+
 		### Metadata 
 		self.type = None ### This is a flag which indicates what kind of spectral function we have, descriptively
 
@@ -484,7 +491,7 @@ class fermion_spectra:
 		self.kxs = kxs
 		self.kys = kys 
 		self.ws = np.real(ws) ### sometimes the frequencies are passed as a complex array 
-		self.dw = ws[1]-ws[0]
+		self.dw = np.real(ws[1]-ws[0])
 
 		self.Nkx = len(self.kxs)
 		self.Nky = len(self.kys)
@@ -498,7 +505,7 @@ class fermion_spectra:
 		### We compute the doping vs chemical potential for each mu in the passed list and given temperature
 		### If no mus are passed we do it for each frequency step 
 		if (mus == None).any():
-			mus = self.ws.copy()
+			mus = np.real(self.ws.copy())
 
 		if (Ts == None).any():
 			Ts = np.array([0.001*t]) ### default to just zero temperature 
@@ -518,12 +525,22 @@ class fermion_spectra:
 
 				self.dopings[i,j] = np.mean(occ_tensor*self.A)*self.dw*float(self.Nw) ### This should be the density 
 
+	### This method computes the chemical potential for a given doping
+	def set_doping(self,delta):
+		### Assumes already ran calc_doping method
+		indices = np.argmin(np
+		.abs(self.dopings-delta)) ### indices where the doping is closest to doping
+		return indices, self.dopings[indices]
+
+
+
+
 	### A simple plotting method 
-	def plot_spectrum(self,bounds):
+	def plot_spectrum(self,bounds,**kwargs):
 		### First we find a good frequency range 
 		extents = [self.kxs[0],self.kxs[-1],self.ws[0],self.ws[-1]]
 
-		plt.imshow(np.transpose(self.A[:,0,:]),extent=extents,origin='lower',cmap='magma',aspect=1.5)
+		plt.imshow(np.transpose(self.A[:,0,:]),extent=extents,origin='lower',**kwargs)
 		plt.colorbar()
 		plt.ylim(bounds[0],bounds[1])
 		plt.xlabel(r'$k_x$')
